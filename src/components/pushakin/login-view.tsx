@@ -66,7 +66,10 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
               <PlayCircle className="h-8 w-8 text-white" />
             </div>
             <h1 className="text-3xl font-bold text-slate-800">Pushakin Flows</h1>
-            <p className="text-slate-500 mt-2">Sistem Manajemen Produksi Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+            <div className="mt-2">
+              <p className="text-sm font-semibold text-violet-600">Sistem Manajemen Produksi</p>
+              <p className="text-xs text-slate-500">Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+            </div>
           </CardHeader>
           <CardContent className="text-center">
             <p className="text-sm text-slate-600 mb-4">
@@ -281,7 +284,10 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
             <PlayCircle className="h-8 w-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-slate-800">Pushakin Flows</h1>
-          <p className="text-slate-500 mt-2">Sistem Manajemen Produksi Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+          <div className="mt-2">
+            <p className="text-sm font-semibold text-violet-600">Sistem Manajemen Produksi</p>
+            <p className="text-xs text-slate-500">Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+          </div>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">

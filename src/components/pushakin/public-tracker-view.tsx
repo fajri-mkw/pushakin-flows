@@ -205,7 +205,11 @@ export function PublicTrackerView({ onBack }: PublicTrackerViewProps) {
             </div>
             <div>
               <h1 className="text-xl font-bold text-white tracking-wide">PUSHAKIN FLOWS</h1>
-              <p className="text-xs text-slate-400">Sistem Manajemen Produksi Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-violet-400">Sistem Manajemen Produksi</span>
+                <span className="text-slate-500">|</span>
+                <span className="text-[10px] text-slate-400">Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</span>
+              </div>
             </div>
           </div>
           

@@ -52,7 +52,11 @@ export function Topbar() {
         <h1 className="text-2xl font-bold text-slate-900 capitalize">
           {viewTitles[activeView] || 'Project Dashboard'}
         </h1>
-        <p className="text-sm text-slate-500">Sistem Manajemen Produksi Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-violet-600">Sistem Manajemen Produksi</span>
+          <span className="text-slate-300">|</span>
+          <span className="text-xs text-slate-500">Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</span>
+        </div>
       </div>
 
       <div className="flex items-center space-x-4">

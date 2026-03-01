@@ -112,7 +112,7 @@ function generateTaskEmail(params: {
   
   <div class="footer">
     <p>Email ini dikirim otomatis oleh Sistem Pushakin Flows</p>
-    <p>Humas Pusat - Sistem Manajemen Produksi Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
+    <p><strong style="color: #7c3aed;">Sistem Manajemen Produksi</strong> | Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi</p>
   </div>
 </body>
 </html>
