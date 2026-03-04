@@ -174,7 +174,6 @@ export function UserManagementView() {
                     </Avatar>
                     <div>
                       <div className="font-semibold text-stone-800">{user.name}</div>
-                      <div className="text-xs text-stone-500">{user.id}</div>
                     </div>
                   </div>
                 </TableCell>
