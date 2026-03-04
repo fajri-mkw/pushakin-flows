@@ -4,16 +4,18 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAppStore } from '@/lib/store'
-import { PlayCircle, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle, User } from 'lucide-react'
+import { PlayCircle, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import { useState, useEffect } from 'react'
-import { cn } from '@/lib/utils'
 
 interface LoginViewProps {
   onSeed: () => Promise<void>
   isSeeding: boolean
   seedError?: string
 }
+
+const REMEMBER_ME_KEY = 'pushakin_remembered_credentials'
 
 export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
   const setCurrentUser = useAppStore((state) => state.setCurrentUser)
@@ -29,6 +31,22 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [loggedInUser, setLoggedInUser] = useState<{id: string, name: string} | null>(null)
+  const [rememberMe, setRememberMe] = useState(false)
+
+  // Load saved credentials on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(REMEMBER_ME_KEY)
+      if (saved) {
+        const credentials = JSON.parse(saved)
+        setEmail(credentials.email || '')
+        setPassword(credentials.password || '')
+        setRememberMe(true)
+      }
+    } catch {
+      // Ignore errors
+    }
+  }, [])
 
   // Check if users exist
   useEffect(() => {
@@ -124,6 +142,13 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         return
       }
 
+      // Handle remember me
+      if (rememberMe) {
+        localStorage.setItem(REMEMBER_ME_KEY, JSON.stringify({ email, password }))
+      } else {
+        localStorage.removeItem(REMEMBER_ME_KEY)
+      }
+
       if (data.mustChangePassword) {
         setMustChangePassword(true)
         setLoggedInUser(data.user)
@@ -133,7 +158,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
 
       setCurrentUser(data.user)
       showAlert(`Selamat datang, ${data.user.name}!`)
-    } catch (err) {
+    } catch {
       setError('Terjadi kesalahan saat login')
     } finally {
       setIsLoading(false)
@@ -175,13 +200,18 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         return
       }
 
+      // Update saved credentials with new password if remember me was checked
+      if (rememberMe) {
+        localStorage.setItem(REMEMBER_ME_KEY, JSON.stringify({ email, password: newPassword }))
+      }
+
       showAlert('Password berhasil diubah! Silakan login kembali.')
       setMustChangePassword(false)
       setLoggedInUser(null)
       setPassword('')
       setNewPassword('')
       setConfirmPassword('')
-    } catch (err) {
+    } catch {
       setError('Terjadi kesalahan saat mengubah password')
     } finally {
       setIsLoading(false)
@@ -335,6 +365,21 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
                   {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
+            </div>
+
+            {/* Remember Me Checkbox */}
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="rememberMe" 
+                checked={rememberMe} 
+                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+              />
+              <Label 
+                htmlFor="rememberMe" 
+                className="text-sm text-slate-600 cursor-pointer select-none"
+              >
+                Ingat saya (simpan email & password)
+              </Label>
             </div>
 
             <Button
