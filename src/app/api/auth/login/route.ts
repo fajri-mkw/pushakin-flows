@@ -5,6 +5,12 @@ import bcrypt from 'bcryptjs'
 // POST - Login with email and password
 export async function POST(request: NextRequest) {
   try {
+    // Check database connection first
+    if (!process.env.DATABASE_URL) {
+      console.error('DATABASE_URL is not set')
+      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 })
+    }
+
     const body = await request.json()
     const { email, password } = body
 
@@ -54,6 +60,10 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Login error:', error)
-    return NextResponse.json({ error: 'Terjadi kesalahan saat login' }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat login'
+    return NextResponse.json({ 
+      error: 'Terjadi kesalahan saat login',
+      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+    }, { status: 500 })
   }
 }
