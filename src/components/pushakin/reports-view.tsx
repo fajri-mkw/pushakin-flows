@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useAppStore, STAGES } from '@/lib/store'
 import { 
   ArrowLeft, 
@@ -12,17 +13,64 @@ import {
   FileText,
   CheckCircle2,
   UserCircle,
-  Loader2
+  Loader2,
+  Users,
+  ExternalLink,
+  Globe
 } from 'lucide-react'
 import { useState, useRef } from 'react'
 import jsPDF from 'jspdf'
-import html2canvas from 'html2canvas'
+import * as XLSX from 'xlsx'
+
+// Platform options for displaying publish links
+const PUBLISH_PLATFORMS = [
+  { id: 'website', label: 'Website Resmi', icon: '🌐' },
+  { id: 'instagram', label: 'Instagram', icon: '📱' },
+  { id: 'facebook', label: 'Facebook', icon: '📘' },
+  { id: 'twitter', label: 'Twitter / X', icon: '🐦' },
+  { id: 'youtube', label: 'YouTube', icon: '▶️' },
+  { id: 'tiktok', label: 'TikTok', icon: '🎵' },
+  { id: 'linkedin', label: 'LinkedIn', icon: '💼' },
+  { id: 'newsletter', label: 'Newsletter', icon: '📧' },
+  { id: 'portal', label: 'Portal Berita', icon: '📰' },
+  { id: 'spotify', label: 'Spotify', icon: '🎧' },
+  { id: 'anchor', label: 'Anchor/Spotify Podcast', icon: '🎙️' },
+  { id: 'podcast', label: 'Platform Podcast', icon: '🎙️' },
+  { id: 'streaming', label: 'Platform Streaming', icon: '📺' },
+  { id: 'other', label: 'Lainnya', icon: '🔗' },
+]
+
+// Get platform info by id
+const getPlatformInfo = (platformId: string) => {
+  return PUBLISH_PLATFORMS.find(p => p.id === platformId) || { id: platformId, label: platformId, icon: '🔗' }
+}
+
+// Check if role is a publisher role that has multiple publish links
+const isPublisherRole = (role: string) => {
+  const publisherRoles = [
+    'Publisher Web',
+    'Publisher Social Media',
+    'Podcast',
+    'Streaming',
+    'Youtube'
+  ]
+  return publisherRoles.some(r => role.toLowerCase().includes(r.toLowerCase()))
+}
 
 export function ReportsView() {
   const { projects, users, selectedProjectId, setSelectedProjectId } = useAppStore()
-  const completedProjects = projects.filter(p => p.currentStage === 5)
+  const [selectedUserId, setSelectedUserId] = useState<string>('all')
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
+  const [isExportingExcel, setIsExportingExcel] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
+
+  // Filter completed projects based on selected user
+  const completedProjects = projects.filter(p => p.currentStage === 5)
+  const filteredProjects = selectedUserId === 'all' 
+    ? completedProjects 
+    : completedProjects.filter(p => {
+        return p.tasks.some(t => t.assignedTo === selectedUserId)
+      })
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return '-'
@@ -30,42 +78,234 @@ export function ReportsView() {
     return d.toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })
   }
 
-  const handleDownloadCSV = (project: typeof projects[0]) => {
-    let csvContent = "data:text/csv;charset=utf-8,"
-    csvContent += "LAPORAN KEGIATAN PROYEK PUSHAKIN\n\n"
-    csvContent += `ID Proyek,${project.id}\n`
-    csvContent += `Judul Kegiatan,${project.title}\n`
-    csvContent += `Unit Pemohon,${project.requesterUnit}\n`
-    csvContent += `Lokasi,${project.location}\n`
-    csvContent += `Waktu Pelaksanaan,${formatDateTime(project.executionTime)}\n`
-    csvContent += `PIC,${project.picName} (${project.picWhatsApp})\n\n`
+  const formatDateShort = (dateString: string) => {
+    if (!dateString) return '-'
+    const d = new Date(dateString)
+    return d.toLocaleDateString('id-ID')
+  }
+
+  // Get all result links from a task
+  const getTaskResultLinks = (task: { data?: { link?: string; publishLinks?: { id: string; platform: string; url: string }[]; notes?: string } }) => {
+    const links: { platform: string; label: string; icon: string; url: string }[] = []
     
-    csvContent += "RINCIAN TUGAS DAN HASIL\n"
-    csvContent += "Tahap,Peran,Petugas,Status,Tautan Hasil / Catatan\n"
+    // Add publish links if available
+    if (task.data?.publishLinks && task.data.publishLinks.length > 0) {
+      task.data.publishLinks.forEach(pl => {
+        const platformInfo = getPlatformInfo(pl.platform)
+        links.push({
+          platform: pl.platform,
+          label: platformInfo.label,
+          icon: platformInfo.icon,
+          url: pl.url
+        })
+      })
+    }
+    
+    // Add single link if available (for non-publisher roles)
+    if (task.data?.link && links.length === 0) {
+      links.push({
+        platform: 'other',
+        label: 'Tautan Hasil',
+        icon: '🔗',
+        url: task.data.link
+      })
+    }
+    
+    return links
+  }
+
+  // Export single project to Excel
+  const handleExportProjectToExcel = (project: typeof projects[0]) => {
+    const wb = XLSX.utils.book_new()
+    
+    // Project Info Sheet
+    const projectInfo = [
+      ['LAPORAN KEGIATAN PROYEK PUSHAKIN'],
+      [''],
+      ['ID Proyek', project.id],
+      ['Judul Kegiatan', project.title],
+      ['Unit Pemohon', project.requesterUnit],
+      ['Lokasi', project.location || '-'],
+      ['Waktu Pelaksanaan', formatDateTime(project.executionTime || project.createdAt)],
+      ['PIC', `${project.picName || '-'} (${project.picWhatsApp || '-'})`],
+      [''],
+      ['RINCIAN TUGAS DAN HASIL'],
+      ['Tahap', 'Peran', 'Petugas', 'Status', 'Platform', 'Tautan Hasil Produksi']
+    ]
     
     project.tasks.forEach(t => {
       const user = users.find(u => u.id === t.assignedTo)
       const userName = user ? user.name : 'Tidak ada'
-      const notes = t.data?.link ? t.data.link : t.data?.notes ? t.data.notes : 'Selesai tanpa tautan'
-      csvContent += `Tahap ${t.stage},${t.role},${userName},${t.status === 'completed' ? 'Selesai' : 'Belum'},"${notes}"\n`
+      const links = getTaskResultLinks(t)
+      
+      if (links.length > 0) {
+        // Add each link as a separate row
+        links.forEach((link, idx) => {
+          projectInfo.push([
+            idx === 0 ? `Tahap ${t.stage}` : '',
+            idx === 0 ? t.role : '',
+            idx === 0 ? userName : '',
+            idx === 0 ? (t.status === 'completed' ? 'Selesai' : 'Belum') : '',
+            link.label,
+            link.url
+          ])
+        })
+      } else {
+        // No links, show notes or default message
+        const notes = t.data?.notes || 'Selesai tanpa tautan'
+        projectInfo.push([
+          `Tahap ${t.stage}`,
+          t.role,
+          userName,
+          t.status === 'completed' ? 'Selesai' : 'Belum',
+          '-',
+          notes
+        ])
+      }
     })
-
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `Laporan_Kegiatan_${project.id}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    
+    const ws = XLSX.utils.aoa_to_sheet(projectInfo)
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 12 },
+      { wch: 22 },
+      { wch: 20 },
+      { wch: 10 },
+      { wch: 20 },
+      { wch: 60 }
+    ]
+    
+    XLSX.utils.book_append_sheet(wb, ws, 'Laporan Kegiatan')
+    
+    // Generate and download
+    XLSX.writeFile(wb, `Laporan_Kegiatan_${project.id}.xlsx`)
   }
 
-  const handleGeneratePDF = async () => {
-    if (!printRef.current) return
+  // Export all filtered projects to Excel
+  const handleExportAllToExcel = async () => {
+    setIsExportingExcel(true)
     
+    try {
+      const wb = XLSX.utils.book_new()
+      
+      // Summary Sheet
+      const summaryData = [
+        ['REKAP LAPORAN KEGIATAN PUSHAKIN FLOWS'],
+        [''],
+        ['Tanggal Export', new Date().toLocaleString('id-ID')],
+        ['Total Proyek', filteredProjects.length.toString()],
+        selectedUserId !== 'all' ? ['Filter User', users.find(u => u.id === selectedUserId)?.name || 'Semua'] : ['Filter User', 'Semua User'],
+        [''],
+        ['DAFTAR PROYEK'],
+        ['No', 'ID Proyek', 'Judul Kegiatan', 'Unit Pemohon', 'Lokasi', 'PIC', 'Waktu Selesai', 'Jumlah Tugas']
+      ]
+      
+      filteredProjects.forEach((project, index) => {
+        summaryData.push([
+          (index + 1).toString(),
+          project.id,
+          project.title,
+          project.requesterUnit,
+          project.location || '-',
+          `${project.picName || '-'} (${project.picWhatsApp || '-'})`,
+          formatDateTime(project.createdAt),
+          project.tasks.length.toString()
+        ])
+      })
+      
+      const wsSummary = XLSX.utils.aoa_to_sheet(summaryData)
+      wsSummary['!cols'] = [
+        { wch: 5 },
+        { wch: 20 },
+        { wch: 40 },
+        { wch: 25 },
+        { wch: 20 },
+        { wch: 30 },
+        { wch: 25 },
+        { wch: 12 }
+      ]
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Rekap')
+      
+      // Detail Sheet for each project
+      filteredProjects.forEach((project, projectIndex) => {
+        const detailData = [
+          [`PROYEK ${projectIndex + 1}: ${project.title}`],
+          [''],
+          ['ID Proyek', project.id],
+          ['Judul Kegiatan', project.title],
+          ['Unit Pemohon', project.requesterUnit],
+          ['Lokasi', project.location || '-'],
+          ['Waktu Pelaksanaan', formatDateTime(project.executionTime || project.createdAt)],
+          ['PIC', `${project.picName || '-'} (${project.picWhatsApp || '-'})`],
+          ['Deskripsi', project.description],
+          [''],
+          ['RINCIAN TUGAS DAN HASIL PRODUKSI'],
+          ['Tahap', 'Peran', 'Petugas', 'Status', 'Platform', 'Tautan Hasil Produksi']
+        ]
+        
+        project.tasks.forEach(t => {
+          const user = users.find(u => u.id === t.assignedTo)
+          const userName = user ? user.name : 'Tidak ada'
+          const links = getTaskResultLinks(t)
+          
+          if (links.length > 0) {
+            links.forEach((link, idx) => {
+              detailData.push([
+                idx === 0 ? `Tahap ${t.stage}` : '',
+                idx === 0 ? t.role : '',
+                idx === 0 ? userName : '',
+                idx === 0 ? (t.status === 'completed' ? 'Selesai' : 'Belum') : '',
+                link.label,
+                link.url
+              ])
+            })
+          } else {
+            const notes = t.data?.notes || 'Selesai tanpa tautan'
+            detailData.push([
+              `Tahap ${t.stage}`,
+              t.role,
+              userName,
+              t.status === 'completed' ? 'Selesai' : 'Belum',
+              '-',
+              notes
+            ])
+          }
+        })
+        
+        // Sheet name must be <= 31 chars
+        const sheetName = `Proyek ${projectIndex + 1}`.substring(0, 31)
+        const wsDetail = XLSX.utils.aoa_to_sheet(detailData)
+        wsDetail['!cols'] = [
+          { wch: 12 },
+          { wch: 22 },
+          { wch: 20 },
+          { wch: 10 },
+          { wch: 20 },
+          { wch: 60 }
+        ]
+        XLSX.utils.book_append_sheet(wb, wsDetail, sheetName)
+      })
+      
+      // Generate filename with date
+      const dateStr = new Date().toISOString().split('T')[0]
+      const fileName = selectedUserId === 'all' 
+        ? `Rekap_Laporan_${dateStr}.xlsx`
+        : `Rekap_Laporan_${users.find(u => u.id === selectedUserId)?.name || 'User'}_${dateStr}.xlsx`
+      
+      XLSX.writeFile(wb, fileName)
+    } catch (error) {
+      console.error('Error exporting to Excel:', error)
+    } finally {
+      setIsExportingExcel(false)
+    }
+  }
+
+  // Export all filtered projects to PDF
+  const handleExportAllToPDF = async () => {
     setIsGeneratingPDF(true)
     
     try {
-      // Create PDF with A4 size
       const pdf = new jsPDF({
         orientation: 'portrait',
         unit: 'mm',
@@ -78,7 +318,6 @@ export function ReportsView() {
       const contentWidth = pageWidth - (margin * 2)
       let yPosition = margin
       
-      // Helper function to add new page if needed
       const checkNewPage = (requiredSpace: number) => {
         if (yPosition + requiredSpace > pageHeight - margin) {
           pdf.addPage()
@@ -86,7 +325,231 @@ export function ReportsView() {
         }
       }
       
-      // Helper function to wrap text
+      // Title Page
+      pdf.setFontSize(24)
+      pdf.setFont('helvetica', 'bold')
+      pdf.text('REKAP LAPORAN KEGIATAN', pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 15
+      
+      pdf.setFontSize(14)
+      pdf.setFont('helvetica', 'normal')
+      pdf.text('Pushakin Flows', pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 10
+      
+      pdf.setFontSize(10)
+      pdf.text(`Tanggal Export: ${new Date().toLocaleString('id-ID')}`, pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 6
+      
+      pdf.text(`Total Proyek: ${filteredProjects.length}`, pageWidth / 2, yPosition, { align: 'center' })
+      yPosition += 6
+      
+      if (selectedUserId !== 'all') {
+        const userName = users.find(u => u.id === selectedUserId)?.name || 'Unknown'
+        pdf.text(`Filter User: ${userName}`, pageWidth / 2, yPosition, { align: 'center' })
+        yPosition += 6
+      }
+      
+      yPosition += 10
+      pdf.setLineWidth(0.5)
+      pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+      yPosition += 15
+      
+      // Process each project
+      for (let projIndex = 0; projIndex < filteredProjects.length; projIndex++) {
+        const project = filteredProjects[projIndex]
+        
+        // Add new page for each project (except first)
+        if (projIndex > 0) {
+          pdf.addPage()
+          yPosition = margin
+        }
+        
+        // Project Header
+        pdf.setFontSize(16)
+        pdf.setFont('helvetica', 'bold')
+        const titleLines = pdf.splitTextToSize(project.title, contentWidth)
+        titleLines.forEach((line: string, idx: number) => {
+          pdf.text(line, margin, yPosition + (idx * 7))
+        })
+        yPosition += titleLines.length * 7 + 5
+        
+        pdf.setFontSize(9)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setTextColor(100, 100, 100)
+        pdf.text(`Ref ID: ${project.id}`, margin, yPosition)
+        pdf.setTextColor(0, 0, 0)
+        yPosition += 8
+        
+        // Divider
+        pdf.setLineWidth(0.2)
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+        yPosition += 8
+        
+        // Project Info
+        pdf.setFontSize(9)
+        const infoItems = [
+          { label: 'Unit Pemohon', value: project.requesterUnit },
+          { label: 'Lokasi', value: project.location || '-' },
+          { label: 'Waktu Selesai', value: formatDateTime(project.createdAt) },
+          { label: 'PIC', value: `${project.picName || '-'} (${project.picWhatsApp || '-'})` }
+        ]
+        
+        for (let i = 0; i < infoItems.length; i += 2) {
+          checkNewPage(12)
+          
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(7)
+          pdf.text(infoItems[i].label.toUpperCase(), margin, yPosition)
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(9)
+          pdf.text(infoItems[i].value, margin, yPosition + 4)
+          
+          if (infoItems[i + 1]) {
+            pdf.setFont('helvetica', 'bold')
+            pdf.setFontSize(7)
+            pdf.text(infoItems[i + 1].label.toUpperCase(), pageWidth / 2, yPosition)
+            pdf.setFont('helvetica', 'normal')
+            pdf.setFontSize(9)
+            pdf.text(infoItems[i + 1].value, pageWidth / 2, yPosition + 4)
+          }
+          
+          yPosition += 10
+        }
+        
+        // Tasks section
+        yPosition += 5
+        checkNewPage(15)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(10)
+        pdf.text('RINCIAN TIM & HASIL PRODUKSI', margin, yPosition)
+        yPosition += 8
+        
+        // Task items
+        project.tasks.forEach((task) => {
+          const user = users.find(u => u.id === task.assignedTo)
+          const userName = user ? user.name : 'Unknown'
+          const links = getTaskResultLinks(task)
+          
+          // Calculate required space based on number of links
+          const requiredSpace = Math.max(30, 20 + (links.length * 8))
+          checkNewPage(requiredSpace)
+          
+          // Task box background
+          const boxHeight = Math.max(25, 18 + (links.length * 8))
+          pdf.setDrawColor(200, 200, 200)
+          pdf.setFillColor(249, 250, 251)
+          pdf.roundedRect(margin, yPosition, contentWidth, boxHeight, 2, 2, 'FD')
+          
+          const taskY = yPosition + 5
+          
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(8)
+          pdf.text(`Tahap ${task.stage}`, margin + 5, taskY)
+          
+          pdf.setFontSize(9)
+          pdf.text(task.role, margin + 25, taskY)
+          
+          pdf.setTextColor(34, 197, 94)
+          pdf.setFontSize(7)
+          pdf.text('TUNTAS', pageWidth - margin - 15, taskY)
+          pdf.setTextColor(0, 0, 0)
+          
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(8)
+          pdf.text(`Dikerjakan oleh: ${userName}`, margin + 5, taskY + 5)
+          
+          // Show links
+          if (links.length > 0) {
+            pdf.setFontSize(7)
+            pdf.setFont('helvetica', 'bold')
+            pdf.text('Hasil Produksi:', margin + 5, taskY + 11)
+            pdf.setFont('helvetica', 'normal')
+            
+            links.forEach((link, idx) => {
+              const linkY = taskY + 16 + (idx * 7)
+              pdf.setFontSize(7)
+              pdf.setTextColor(100, 100, 100)
+              // Don't use emoji in PDF - jsPDF doesn't support it
+              pdf.text(`[${link.label}]:`, margin + 5, linkY)
+              pdf.setTextColor(0, 0, 0)
+              
+              const urlLines = pdf.splitTextToSize(link.url, contentWidth - 50)
+              pdf.setFontSize(7)
+              pdf.setTextColor(0, 0, 0)
+              urlLines.slice(0, 1).forEach((line: string) => {
+                pdf.text(line, margin + 45, linkY)
+              })
+            })
+          } else {
+            pdf.setFontSize(7)
+            pdf.setFont('helvetica', 'bold')
+            pdf.text('Catatan:', margin + 5, taskY + 11)
+            pdf.setFont('helvetica', 'normal')
+            const notes = task.data?.notes || 'Selesai tanpa tautan'
+            pdf.text(notes.substring(0, 80), margin + 5, taskY + 16)
+          }
+          
+          yPosition += boxHeight + 3
+        })
+        
+        // Footer for each project
+        yPosition += 5
+        checkNewPage(10)
+        pdf.setLineWidth(0.1)
+        pdf.line(margin, yPosition, pageWidth - margin, yPosition)
+        yPosition += 5
+        pdf.setFontSize(7)
+        pdf.setTextColor(150, 150, 150)
+        pdf.text(`Proyek ${projIndex + 1} dari ${filteredProjects.length}`, pageWidth / 2, yPosition, { align: 'center' })
+        pdf.setTextColor(0, 0, 0)
+      }
+      
+      // Final footer
+      yPosition = pageHeight - 10
+      pdf.setFontSize(7)
+      pdf.setTextColor(150, 150, 150)
+      pdf.text('Dokumen di-generate oleh Sistem Pushakin Flows', pageWidth / 2, yPosition, { align: 'center' })
+      
+      // Save PDF
+      const dateStr = new Date().toISOString().split('T')[0]
+      const fileName = selectedUserId === 'all' 
+        ? `Rekap_Laporan_${dateStr}.pdf`
+        : `Rekap_Laporan_${users.find(u => u.id === selectedUserId)?.name || 'User'}_${dateStr}.pdf`
+      
+      pdf.save(fileName)
+      
+    } catch (error) {
+      console.error('Error generating PDF:', error)
+    } finally {
+      setIsGeneratingPDF(false)
+    }
+  }
+
+  const handleGeneratePDF = async () => {
+    if (!printRef.current) return
+    
+    setIsGeneratingPDF(true)
+    
+    try {
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      })
+      
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const margin = 15
+      const contentWidth = pageWidth - (margin * 2)
+      let yPosition = margin
+      
+      const checkNewPage = (requiredSpace: number) => {
+        if (yPosition + requiredSpace > pageHeight - margin) {
+          pdf.addPage()
+          yPosition = margin
+        }
+      }
+      
       const addWrappedText = (text: string, x: number, y: number, maxWidth: number, lineHeight: number) => {
         const lines = pdf.splitTextToSize(text, maxWidth)
         lines.forEach((line: string, index: number) => {
@@ -96,7 +559,7 @@ export function ReportsView() {
         return lines.length * lineHeight
       }
       
-      const report = completedProjects.find(p => p.id === selectedProjectId)
+      const report = filteredProjects.find(p => p.id === selectedProjectId)
       if (!report) return
       
       // Header
@@ -198,20 +661,24 @@ export function ReportsView() {
       // Tasks section
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(10)
-      pdf.text('REKAPITULASI TIM & BUKTI HASIL', margin, yPosition)
+      pdf.text('REKAPITULASI TIM & HASIL PRODUKSI', margin, yPosition)
       yPosition += 8
       
       // Task items
-      report.tasks.forEach((task, index) => {
-        checkNewPage(35)
-        
+      report.tasks.forEach((task) => {
         const user = users.find(u => u.id === task.assignedTo)
         const userName = user ? user.name : 'Unknown'
+        const links = getTaskResultLinks(task)
         
-        // Task box
+        // Calculate required space based on number of links
+        const requiredSpace = Math.max(35, 25 + (links.length * 10))
+        checkNewPage(requiredSpace)
+        
+        // Task box - dynamic height based on content
+        const boxHeight = Math.max(30, 22 + (links.length * 10))
         pdf.setDrawColor(200, 200, 200)
         pdf.setFillColor(249, 250, 251)
-        pdf.roundedRect(margin, yPosition, contentWidth, 30, 2, 2, 'FD')
+        pdf.roundedRect(margin, yPosition, contentWidth, boxHeight, 2, 2, 'FD')
         
         const taskY = yPosition + 5
         
@@ -224,41 +691,59 @@ export function ReportsView() {
         pdf.setFontSize(10)
         pdf.text(task.role, margin + 25, taskY)
         
-        // Status - use text instead of symbol for better compatibility
-        pdf.setTextColor(34, 197, 94) // green-500
+        // Status
+        pdf.setTextColor(34, 197, 94)
         pdf.setFontSize(8)
         pdf.text('TUNTAS', pageWidth - margin - 15, taskY)
-        pdf.setTextColor(0, 0, 0) // reset to black
+        pdf.setTextColor(0, 0, 0)
         
         // User
         pdf.setFont('helvetica', 'normal')
         pdf.setFontSize(9)
         pdf.text(`Dikerjakan oleh: ${userName}`, margin + 5, taskY + 6)
         
-        // Bukti
-        pdf.setFontSize(8)
-        pdf.setFont('helvetica', 'bold')
-        pdf.text('Bukti Serah Terima:', margin + 5, taskY + 12)
-        pdf.setFont('helvetica', 'normal')
-        
-        const buktiText = task.data?.link || task.data?.notes || 'Tugas diselesaikan dan diunggah ke Drive'
-        const buktiLines = pdf.splitTextToSize(buktiText, contentWidth - 10)
-        pdf.setFontSize(8)
-        buktiLines.slice(0, 3).forEach((line: string, i: number) => {
-          pdf.text(line, margin + 5, taskY + 17 + (i * 4))
-        })
-        
-        yPosition += 35
-        
-        // Add separator between tasks
-        if (index < report.tasks.length - 1) {
-          pdf.setDrawColor(230, 230, 230)
-          pdf.line(margin + 10, yPosition - 2, pageWidth - margin - 10, yPosition - 2)
+        // Show links
+        if (links.length > 0) {
+          pdf.setFontSize(8)
+          pdf.setFont('helvetica', 'bold')
+          pdf.text('Link Hasil Produksi:', margin + 5, taskY + 12)
+          pdf.setFont('helvetica', 'normal')
+          
+          links.forEach((link, idx) => {
+            const linkY = taskY + 17 + (idx * 9)
+            
+            // Platform label - don't use emoji in PDF
+            pdf.setFontSize(7)
+            pdf.setTextColor(100, 100, 100)
+            pdf.text(`[${link.label}]`, margin + 5, linkY)
+            pdf.setTextColor(0, 0, 0)
+            
+            // URL
+            const urlLines = pdf.splitTextToSize(link.url, contentWidth - 10)
+            pdf.setFontSize(8)
+            urlLines.slice(0, 2).forEach((line: string, i: number) => {
+              pdf.text(line, margin + 5, linkY + 4 + (i * 4))
+            })
+          })
+        } else {
+          // No links - show notes
+          pdf.setFontSize(8)
+          pdf.setFont('helvetica', 'bold')
+          pdf.text('Catatan:', margin + 5, taskY + 12)
+          pdf.setFont('helvetica', 'normal')
+          const notes = task.data?.notes || 'Tugas diselesaikan dan diunggah ke Drive'
+          const noteLines = pdf.splitTextToSize(notes, contentWidth - 10)
+          pdf.setFontSize(8)
+          noteLines.slice(0, 2).forEach((line: string, i: number) => {
+            pdf.text(line, margin + 5, taskY + 17 + (i * 4))
+          })
         }
+        
+        yPosition += boxHeight + 5
       })
       
       // Footer
-      yPosition += 15
+      yPosition += 10
       checkNewPage(15)
       pdf.setLineWidth(0.2)
       pdf.line(margin, yPosition, pageWidth - margin, yPosition)
@@ -280,7 +765,7 @@ export function ReportsView() {
 
   // Detail View
   if (selectedProjectId) {
-    const report = completedProjects.find(p => p.id === selectedProjectId)
+    const report = filteredProjects.find(p => p.id === selectedProjectId)
     if (!report) return null
 
     return (
@@ -297,11 +782,11 @@ export function ReportsView() {
           <div className="flex gap-3">
             <Button
               variant="outline"
-              onClick={() => handleDownloadCSV(report)}
+              onClick={() => handleExportProjectToExcel(report)}
               className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>Unduh Spreadsheet</span>
+              <span>Unduh Excel</span>
             </Button>
             <Button
               onClick={handleGeneratePDF}
@@ -383,11 +868,14 @@ export function ReportsView() {
 
             <div>
               <h3 className="text-sm font-bold text-stone-800 uppercase tracking-wider mb-4 border-b border-stone-200 pb-2">
-                Rekapitulasi Tim & Bukti Hasil
+                Rekapitulasi Tim & Hasil Produksi
               </h3>
               <div className="space-y-4">
                 {report.tasks.map(task => {
                   const user = users.find(u => u.id === task.assignedTo)
+                  const links = getTaskResultLinks(task)
+                  const isPublisher = isPublisherRole(task.role)
+                  
                   return (
                     <div
                       key={task.id}
@@ -399,6 +887,11 @@ export function ReportsView() {
                             Tahap {task.stage}
                           </Badge>
                           <span className="font-bold text-stone-800">{task.role}</span>
+                          {isPublisher && links.length > 0 && (
+                            <Badge variant="outline" className="bg-green-50 text-green-700 text-[10px]">
+                              {links.length} link produksi
+                            </Badge>
+                          )}
                         </div>
                         <span className="text-xs font-medium text-stone-500 flex items-center gap-1">
                           <CheckCircle2 className="w-3 h-3 text-green-600" />
@@ -409,24 +902,33 @@ export function ReportsView() {
                         <UserCircle className="w-4 h-4 text-stone-400" />
                         <span>Dikerjakan oleh: <strong className="text-stone-800">{user ? user.name : 'Unknown'}</strong></span>
                       </div>
+                      
                       <div className="bg-white p-3 rounded-lg border border-stone-200 text-sm">
-                        <strong className="block text-xs uppercase tracking-wider text-stone-400 mb-1">
-                          Bukti Serah Terima:
+                        <strong className="block text-xs uppercase tracking-wider text-stone-400 mb-2">
+                          {links.length > 0 ? 'Link Hasil Produksi:' : 'Catatan:'}
                         </strong>
-                        {task.data?.link ? (
-                          <a
-                            href={task.data.link}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-violet-600 underline break-all"
-                          >
-                            {task.data.link}
-                          </a>
-                        ) : task.data?.publishLinks && task.data.publishLinks.length > 0 ? (
-                          <div className="space-y-1">
-                            {task.data.publishLinks.map((pl, idx) => (
-                              <div key={idx} className="text-violet-600 underline break-all">
-                                {pl.url}
+                        
+                        {links.length > 0 ? (
+                          <div className="space-y-2">
+                            {links.map((link, idx) => (
+                              <div key={idx} className="flex items-start gap-3 p-2 bg-stone-50 rounded-lg border border-stone-100">
+                                <span className="text-lg flex-shrink-0" title={link.label}>
+                                  {link.icon}
+                                </span>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-[10px] font-bold text-stone-500 uppercase tracking-wider mb-0.5">
+                                    {link.label}
+                                  </div>
+                                  <a
+                                    href={link.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="text-violet-600 hover:text-violet-800 underline break-all text-sm flex items-center gap-1"
+                                  >
+                                    {link.url}
+                                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                                  </a>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -468,19 +970,85 @@ export function ReportsView() {
         </CardContent>
       </Card>
 
-      {completedProjects.length === 0 ? (
+      {/* Filter Section */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-stone-500" />
+              <span className="text-sm font-medium text-stone-700">Filter berdasarkan User:</span>
+            </div>
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Pilih user..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua User</SelectItem>
+                {users.map(user => (
+                  <SelectItem key={user.id} value={user.id}>
+                    {user.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            
+            <div className="flex-1" />
+            
+            <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={handleExportAllToExcel}
+                disabled={isExportingExcel || filteredProjects.length === 0}
+                className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+              >
+                {isExportingExcel ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="w-4 h-4" />
+                )}
+                <span>{isExportingExcel ? 'Mengekspor...' : 'Export Excel'}</span>
+              </Button>
+              <Button
+                onClick={handleExportAllToPDF}
+                disabled={isGeneratingPDF || filteredProjects.length === 0}
+                className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-md shadow-violet-500/20"
+              >
+                {isGeneratingPDF ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Printer className="w-4 h-4" />
+                )}
+                <span>{isGeneratingPDF ? 'Membuat PDF...' : 'Export PDF'}</span>
+              </Button>
+            </div>
+          </div>
+          
+          {selectedUserId !== 'all' && (
+            <div className="mt-4 pt-4 border-t border-stone-200">
+              <p className="text-sm text-stone-600">
+                Menampilkan <strong>{filteredProjects.length}</strong> proyek yang dikerjakan oleh <strong>{users.find(u => u.id === selectedUserId)?.name}</strong>
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {filteredProjects.length === 0 ? (
         <Card className="p-12 text-center">
           <CardContent className="pt-6">
             <FileText className="w-16 h-16 text-stone-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-stone-800">Belum ada Laporan</h3>
+            <h3 className="text-xl font-semibold text-stone-800">Tidak Ada Laporan</h3>
             <p className="text-stone-500 mt-2">
-              Laporan akan muncul otomatis ketika sebuah proyek telah menyelesaikan proses Publikasi.
+              {selectedUserId === 'all' 
+                ? 'Laporan akan muncul otomatis ketika sebuah proyek telah menyelesaikan proses Publikasi.'
+                : 'Tidak ada proyek yang dikerjakan oleh user tersebut.'
+              }
             </p>
           </CardContent>
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {completedProjects.map(project => (
+          {filteredProjects.map(project => (
             <Card
               key={project.id}
               className="cursor-pointer hover:shadow-md hover:border-violet-300 transition-all group"
@@ -515,3 +1083,4 @@ export function ReportsView() {
     </div>
   )
 }
+
