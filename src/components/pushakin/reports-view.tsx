@@ -4,6 +4,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useAppStore, STAGES } from '@/lib/store'
 import { 
   ArrowLeft, 
@@ -12,17 +19,33 @@ import {
   FileText,
   CheckCircle2,
   UserCircle,
-  Loader2
+  Loader2,
+  Filter,
+  Users
 } from 'lucide-react'
-import { useState, useRef } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import jsPDF from 'jspdf'
 import html2canvas from 'html2canvas'
 
 export function ReportsView() {
-  const { projects, users, selectedProjectId, setSelectedProjectId } = useAppStore()
-  const completedProjects = projects.filter(p => p.currentStage === 5)
+  const { projects, users, selectedProjectId, setSelectedProjectId, currentUser } = useAppStore()
+  const [selectedUserId, setSelectedUserId] = useState<string>('all')
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
+  
+  // Filter completed projects based on selected user
+  const completedProjects = useMemo(() => {
+    const completed = projects.filter(p => p.currentStage === 5)
+    
+    if (selectedUserId === 'all') {
+      return completed
+    }
+    
+    // Filter projects where the selected user has tasks assigned
+    return completed.filter(project => 
+      project.tasks.some(task => task.assignedTo === selectedUserId)
+    )
+  }, [projects, selectedUserId])
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return '-'
@@ -38,12 +61,24 @@ export function ReportsView() {
     csvContent += `Unit Pemohon,${project.requesterUnit}\n`
     csvContent += `Lokasi,${project.location}\n`
     csvContent += `Waktu Pelaksanaan,${formatDateTime(project.executionTime)}\n`
-    csvContent += `PIC,${project.picName} (${project.picWhatsApp})\n\n`
+    csvContent += `PIC,${project.picName} (${project.picWhatsApp})\n`
+    
+    // Add filter info if user is selected
+    if (selectedUserId !== 'all') {
+      const filteredUser = users.find(u => u.id === selectedUserId)
+      csvContent += `Filter Petugas,${filteredUser?.name || 'Unknown'}\n`
+    }
+    csvContent += "\n"
     
     csvContent += "RINCIAN TUGAS DAN HASIL\n"
     csvContent += "Tahap,Peran,Petugas,Status,Tautan Hasil / Catatan\n"
     
-    project.tasks.forEach(t => {
+    // Filter tasks if user is selected
+    const tasksToExport = selectedUserId !== 'all' 
+      ? project.tasks.filter(t => t.assignedTo === selectedUserId)
+      : project.tasks
+    
+    tasksToExport.forEach(t => {
       const user = users.find(u => u.id === t.assignedTo)
       const userName = user ? user.name : 'Tidak ada'
       const notes = t.data?.link ? t.data.link : t.data?.notes ? t.data.notes : 'Selesai tanpa tautan'
@@ -201,8 +236,13 @@ export function ReportsView() {
       pdf.text('REKAPITULASI TIM & BUKTI HASIL', margin, yPosition)
       yPosition += 8
       
+      // Filter tasks if user is selected
+      const tasksToShow = selectedUserId !== 'all' 
+        ? report.tasks.filter(t => t.assignedTo === selectedUserId)
+        : report.tasks
+      
       // Task items
-      report.tasks.forEach((task, index) => {
+      tasksToShow.forEach((task, index) => {
         checkNewPage(35)
         
         const user = users.find(u => u.id === task.assignedTo)
@@ -251,7 +291,7 @@ export function ReportsView() {
         yPosition += 35
         
         // Add separator between tasks
-        if (index < report.tasks.length - 1) {
+        if (index < tasksToShow.length - 1) {
           pdf.setDrawColor(230, 230, 230)
           pdf.line(margin + 10, yPosition - 2, pageWidth - margin - 10, yPosition - 2)
         }
@@ -384,9 +424,17 @@ export function ReportsView() {
             <div>
               <h3 className="text-sm font-bold text-stone-800 uppercase tracking-wider mb-4 border-b border-stone-200 pb-2">
                 Rekapitulasi Tim & Bukti Hasil
+                {selectedUserId !== 'all' && (
+                  <span className="ml-2 text-xs font-normal text-violet-600">
+                    (Filtered: {users.find(u => u.id === selectedUserId)?.name})
+                  </span>
+                )}
               </h3>
               <div className="space-y-4">
-                {report.tasks.map(task => {
+                {(selectedUserId !== 'all' 
+                  ? report.tasks.filter(t => t.assignedTo === selectedUserId)
+                  : report.tasks
+                ).map(task => {
                   const user = users.find(u => u.id === task.assignedTo)
                   return (
                     <div
@@ -465,6 +513,44 @@ export function ReportsView() {
           <p className="text-stone-500">
             Daftar arsip proyek yang telah selesai (Tahap 5) dan siap diunduh untuk kebutuhan pelaporan manajerial.
           </p>
+        </CardContent>
+      </Card>
+
+      {/* Filter Section */}
+      <Card className="border-slate-200">
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-slate-600">
+              <Filter className="w-4 h-4" />
+              <span className="font-medium">Filter berdasarkan:</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-slate-400" />
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger className="w-[220px] bg-white">
+                  <SelectValue placeholder="Pilih Petugas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Petugas</SelectItem>
+                  {users.map(user => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name} ({user.role})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedUserId !== 'all' && (
+              <div className="flex items-center gap-2 text-sm">
+                <Badge variant="outline" className="bg-violet-50 text-violet-700 border-violet-200">
+                  {users.find(u => u.id === selectedUserId)?.name}
+                </Badge>
+                <span className="text-slate-500">
+                  ({completedProjects.length} proyek)
+                </span>
+              </div>
+            )}
+          </div>
         </CardContent>
       </Card>
 
