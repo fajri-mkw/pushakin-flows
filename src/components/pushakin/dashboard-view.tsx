@@ -20,7 +20,10 @@ import {
   FolderKanban, 
   Trash2,
   CheckCircle2,
-  XCircle
+  XCircle,
+  MapPin,
+  Clock,
+  User
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
@@ -178,11 +181,28 @@ export function DashboardView() {
                   {/* Project Header */}
                   <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 px-4 py-3 text-white">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <h3 className="font-bold text-lg">{project.title}</h3>
-                        <p className="text-xs text-slate-400">{project.requesterUnit} • ID: {project.id.slice(0, 8)}...</p>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-bold text-lg truncate">{project.title}</h3>
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                          <span className="text-xs text-slate-400 flex items-center gap-1">
+                            <User className="w-3 h-3" />
+                            {project.requesterUnit}
+                          </span>
+                          {project.location && (
+                            <span className="text-xs text-slate-400 flex items-center gap-1">
+                              <MapPin className="w-3 h-3" />
+                              {project.location}
+                            </span>
+                          )}
+                          {project.executionTime && (
+                            <span className="text-xs text-slate-400 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              {project.executionTime}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="text-right">
+                      <div className="text-right shrink-0 ml-3">
                         <div className="text-2xl font-bold">{percentage}%</div>
                         <div className="text-xs text-slate-400">{completedTasks}/{totalTasks} tugas</div>
                       </div>
@@ -373,8 +393,10 @@ export function DashboardView() {
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50">
-                <TableHead className="font-semibold text-xs">ID</TableHead>
-                <TableHead className="font-semibold text-xs">Judul</TableHead>
+                <TableHead className="font-semibold text-xs">Judul Kegiatan</TableHead>
+                <TableHead className="font-semibold text-xs">Pemohon</TableHead>
+                <TableHead className="font-semibold text-xs">Tempat</TableHead>
+                <TableHead className="font-semibold text-xs">Waktu</TableHead>
                 <TableHead className="font-semibold text-xs">Tahap</TableHead>
                 <TableHead className="font-semibold text-xs">Progress</TableHead>
                 <TableHead className="font-semibold text-center text-xs">T1</TableHead>
@@ -395,13 +417,15 @@ export function DashboardView() {
                     className="cursor-pointer hover:bg-slate-50/50 group"
                     onClick={() => { setSelectedProjectId(project.id); setActiveView('project_detail'); }}
                   >
-                    <TableCell className="font-mono text-slate-400 text-xs">{project.id.slice(0, 6)}...</TableCell>
                     <TableCell>
                       <div className="font-semibold text-slate-800 group-hover:text-slate-600 text-sm">
                         {project.title}
                       </div>
-                      <div className="text-xs text-slate-500">{project.requesterUnit}</div>
+                      <div className="text-xs text-slate-400 font-mono">ID: {project.id.slice(0, 8)}...</div>
                     </TableCell>
+                    <TableCell className="text-sm text-slate-600">{project.requesterUnit}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{project.location || '-'}</TableCell>
+                    <TableCell className="text-sm text-slate-600">{project.executionTime || '-'}</TableCell>
                     <TableCell>
                       <Badge className={cn("text-xs", currentGradient.bg, "text-white border-0")}>
                         T{project.currentStage}: {STAGES[project.currentStage]}
