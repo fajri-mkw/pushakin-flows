@@ -22,6 +22,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
   const showAlert = useAppStore((state) => state.showAlert)
   
   const [hasUsers, setHasUsers] = useState<boolean | null>(null)
+  const [dbError, setDbError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -53,18 +54,44 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
     const checkUsers = async () => {
       try {
         const res = await fetch('/api/users')
+        
         if (!res.ok) {
+          // Try to get error message
+          try {
+            const errorData = await res.json()
+            setDbError(errorData.error || 'Gagal terhubung ke database')
+          } catch {
+            setDbError('Gagal terhubung ke database')
+          }
           setHasUsers(false)
           return
         }
+        
         const text = await res.text()
         if (!text) {
+          setDbError('Response kosong dari server')
           setHasUsers(false)
           return
         }
-        const users = JSON.parse(text)
-        setHasUsers(users.length > 0)
-      } catch {
+        
+        try {
+          const users = JSON.parse(text)
+          if (Array.isArray(users)) {
+            setHasUsers(users.length > 0)
+            setDbError(null)
+          } else if (users.error) {
+            setDbError(users.error)
+            setHasUsers(false)
+          } else {
+            setHasUsers(false)
+          }
+        } catch {
+          setDbError('Format response tidak valid')
+          setHasUsers(false)
+        }
+      } catch (err) {
+        console.error('Check users error:', err)
+        setDbError('Tidak dapat terhubung ke server')
         setHasUsers(false)
       }
     }
@@ -83,7 +110,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
     )
   }
 
-  // No users - show seed button
+  // No users or database error - show seed button
   if (!hasUsers) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-violet-100 p-4">
@@ -99,9 +126,19 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
             </div>
           </CardHeader>
           <CardContent className="text-center">
-            <p className="text-sm text-slate-600 mb-4">
-              Database belum diinisialisasi. Klik tombol di bawah untuk membuat data demo.
-            </p>
+            {dbError ? (
+              <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm text-left flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium">Perhatian</p>
+                  <p className="text-xs mt-1">{dbError}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-slate-600 mb-4">
+                Database belum diinisialisasi. Klik tombol di bawah untuk membuat data demo.
+              </p>
+            )}
             {seedError && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm text-left flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
@@ -143,8 +180,18 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         body: JSON.stringify({ email, password })
       })
 
-      const text = await response.text()
-      const data = text ? JSON.parse(text) : {}
+      // Safely parse response
+      let data: { error?: string; user?: { id: string; name: string }; mustChangePassword?: boolean } = {}
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch {
+        setError('Gagal memproses response dari server')
+        setIsLoading(false)
+        return
+      }
 
       if (!response.ok) {
         setError(data.error || 'Login gagal. Silakan coba lagi.')
@@ -159,17 +206,22 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         localStorage.removeItem(REMEMBER_ME_KEY)
       }
 
-      if (data.mustChangePassword) {
+      if (data.mustChangePassword && data.user) {
         setMustChangePassword(true)
         setLoggedInUser(data.user)
         setIsLoading(false)
         return
       }
 
-      setCurrentUser(data.user)
-      showAlert(`Selamat datang, ${data.user.name}!`)
-    } catch {
-      setError('Terjadi kesalahan saat login')
+      if (data.user) {
+        setCurrentUser(data.user)
+        showAlert(`Selamat datang, ${data.user.name}!`)
+      } else {
+        setError('Data user tidak ditemukan')
+      }
+    } catch (err) {
+      console.error('Login error:', err)
+      setError('Terjadi kesalahan jaringan. Silakan coba lagi.')
     } finally {
       setIsLoading(false)
     }
@@ -202,8 +254,17 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         })
       })
 
-      const text = await response.text()
-      const data = text ? JSON.parse(text) : {}
+      let data: { success?: boolean; error?: string } = {}
+      try {
+        const text = await response.text()
+        if (text) {
+          data = JSON.parse(text)
+        }
+      } catch {
+        setError('Gagal memproses response dari server')
+        setIsLoading(false)
+        return
+      }
 
       if (!response.ok) {
         setError(data.error || 'Gagal mengubah password. Silakan coba lagi.')
@@ -223,7 +284,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
       setNewPassword('')
       setConfirmPassword('')
     } catch {
-      setError('Terjadi kesalahan saat mengubah password')
+      setError('Terjadi kesalahan jaringan. Silakan coba lagi.')
     } finally {
       setIsLoading(false)
     }

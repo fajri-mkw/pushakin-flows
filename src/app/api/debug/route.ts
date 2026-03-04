@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { db, ensureDbConnection } from '@/lib/db'
 
 export async function GET() {
   const debugInfo = {
@@ -6,30 +7,31 @@ export async function GET() {
     environment: process.env.NODE_ENV,
     hasDatabaseUrl: !!process.env.DATABASE_URL,
     databaseUrlPrefix: process.env.DATABASE_URL?.substring(0, 30) + '...' || 'NOT SET',
+    databaseConnection: 'not_tested'
   }
 
-  return NextResponse.json(debugInfo)
-}
-
-export async function POST() {
   try {
-    // Try to import and use Prisma
-    const { db } = await import('@/lib/db')
+    const isConnected = await ensureDbConnection()
+    debugInfo.databaseConnection = isConnected ? 'connected' : 'failed'
     
-    // Try a simple query
-    const userCount = await db.user.count()
+    if (isConnected) {
+      const userCount = await db.user.count()
+      return NextResponse.json({
+        ...debugInfo,
+        userCount,
+        status: 'ok'
+      })
+    }
     
     return NextResponse.json({
-      success: true,
-      userCount,
-      message: 'Database connection successful'
-    })
+      ...debugInfo,
+      status: 'connection_failed'
+    }, { status: 500 })
   } catch (error) {
-    console.error('Database connection error:', error)
     return NextResponse.json({
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack?.split('\n').slice(0, 5) : undefined
+      ...debugInfo,
+      status: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }

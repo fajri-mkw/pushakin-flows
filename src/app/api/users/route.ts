@@ -1,4 +1,4 @@
-import { db } from '@/lib/db'
+import { db, ensureDbConnection } from '@/lib/db'
 import { Role } from '@prisma/client'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
@@ -6,6 +6,15 @@ import bcrypt from 'bcryptjs'
 // GET all users
 export async function GET() {
   try {
+    // Ensure database connection
+    const isConnected = await ensureDbConnection()
+    if (!isConnected) {
+      return NextResponse.json({ 
+        error: 'Database connection failed',
+        users: [] 
+      }, { status: 500 })
+    }
+
     const users = await db.user.findMany({
       orderBy: { createdAt: 'desc' }
     })
@@ -39,13 +48,22 @@ export async function GET() {
     return NextResponse.json(transformedUsers)
   } catch (error) {
     console.error('Get users error:', error)
-    return NextResponse.json({ error: 'Failed to fetch users' }, { status: 500 })
+    return NextResponse.json({ 
+      error: 'Failed to fetch users',
+      details: error instanceof Error ? error.message : 'Unknown error',
+      users: []
+    }, { status: 500 })
   }
 }
 
 // POST create user
 export async function POST(request: NextRequest) {
   try {
+    const isConnected = await ensureDbConnection()
+    if (!isConnected) {
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 })
+    }
+
     const body = await request.json()
     const { name, email, whatsapp, avatar, role, password } = body
     
@@ -100,6 +118,11 @@ export async function POST(request: NextRequest) {
 // PUT update user
 export async function PUT(request: NextRequest) {
   try {
+    const isConnected = await ensureDbConnection()
+    if (!isConnected) {
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 })
+    }
+
     const body = await request.json()
     const { id, name, email, whatsapp, avatar, role } = body
     
@@ -148,6 +171,11 @@ export async function PUT(request: NextRequest) {
 // DELETE user
 export async function DELETE(request: NextRequest) {
   try {
+    const isConnected = await ensureDbConnection()
+    if (!isConnected) {
+      return NextResponse.json({ error: 'Database connection failed' }, { status: 500 })
+    }
+
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     

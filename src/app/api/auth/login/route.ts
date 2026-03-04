@@ -1,14 +1,14 @@
+import { db, ensureDbConnection } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
 import bcrypt from 'bcryptjs'
 
 // POST - Login with email and password
 export async function POST(request: NextRequest) {
   try {
     // Check database connection first
-    if (!process.env.DATABASE_URL) {
-      console.error('DATABASE_URL is not set')
-      return NextResponse.json({ error: 'Database configuration error' }, { status: 500 })
+    const isConnected = await ensureDbConnection()
+    if (!isConnected) {
+      return NextResponse.json({ error: 'Koneksi database gagal. Silakan hubungi administrator.' }, { status: 500 })
     }
 
     const body = await request.json()
@@ -60,10 +60,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('Login error:', error)
-    const errorMessage = error instanceof Error ? error.message : 'Terjadi kesalahan saat login'
     return NextResponse.json({ 
-      error: 'Terjadi kesalahan saat login',
-      details: process.env.NODE_ENV === 'development' ? errorMessage : undefined
+      error: 'Terjadi kesalahan saat login. Silakan coba lagi.',
+      details: process.env.NODE_ENV === 'development' && error instanceof Error ? error.message : undefined
     }, { status: 500 })
   }
 }
