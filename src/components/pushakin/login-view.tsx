@@ -53,7 +53,16 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
     const checkUsers = async () => {
       try {
         const res = await fetch('/api/users')
-        const users = await res.json()
+        if (!res.ok) {
+          setHasUsers(false)
+          return
+        }
+        const text = await res.text()
+        if (!text) {
+          setHasUsers(false)
+          return
+        }
+        const users = JSON.parse(text)
         setHasUsers(users.length > 0)
       } catch {
         setHasUsers(false)
@@ -134,10 +143,11 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         body: JSON.stringify({ email, password })
       })
 
-      const data = await response.json()
+      const text = await response.text()
+      const data = text ? JSON.parse(text) : {}
 
       if (!response.ok) {
-        setError(data.error || 'Login gagal')
+        setError(data.error || 'Login gagal. Silakan coba lagi.')
         setIsLoading(false)
         return
       }
@@ -192,10 +202,11 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         })
       })
 
-      const data = await response.json()
+      const text = await response.text()
+      const data = text ? JSON.parse(text) : {}
 
       if (!response.ok) {
-        setError(data.error || 'Gagal mengubah password')
+        setError(data.error || 'Gagal mengubah password. Silakan coba lagi.')
         setIsLoading(false)
         return
       }

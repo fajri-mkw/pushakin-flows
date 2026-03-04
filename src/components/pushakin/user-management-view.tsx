@@ -100,8 +100,14 @@ export function UserManagementView() {
           body: JSON.stringify(formData)
         })
         if (response.ok) {
-          const user = await response.json()
-          updateUser(user as User)
+          const text = await response.text()
+          if (text) {
+            const user = JSON.parse(text)
+            updateUser(user as User)
+          }
+        } else {
+          showAlert('Gagal menyimpan pengguna')
+          return
         }
       } else {
         const response = await fetch('/api/users', {
@@ -110,8 +116,14 @@ export function UserManagementView() {
           body: JSON.stringify(formData)
         })
         if (response.ok) {
-          const user = await response.json()
-          addUser(user as User)
+          const text = await response.text()
+          if (text) {
+            const user = JSON.parse(text)
+            addUser(user as User)
+          }
+        } else {
+          showAlert('Gagal menyimpan pengguna')
+          return
         }
       }
       setIsModalOpen(false)
