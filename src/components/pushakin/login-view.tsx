@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAppStore } from '@/lib/store'
-import { PlayCircle, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { PlayCircle, Mail, Lock, Loader2, Eye, EyeOff, AlertCircle, RefreshCw } from 'lucide-react'
 import { useState, useEffect } from 'react'
 
 interface LoginViewProps {
@@ -22,6 +22,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
   const showAlert = useAppStore((state) => state.showAlert)
   
   const [hasUsers, setHasUsers] = useState<boolean | null>(null)
+  const [serverStatus, setServerStatus] = useState<'checking' | 'ok' | 'error'>('checking')
   const [dbError, setDbError] = useState<string | null>(null)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -49,31 +50,52 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
     }
   }, [])
 
-  // Check if users exist
+  // Check server health and users
   useEffect(() => {
-    const checkUsers = async () => {
+    const checkServer = async () => {
       try {
-        const res = await fetch('/api/users')
+        // First check if server is running
+        const healthRes = await fetch('/api/health')
+        if (!healthRes.ok) {
+          setServerStatus('error')
+          setDbError('Server tidak merespons')
+          setHasUsers(false)
+          return
+        }
+
+        const healthData = await healthRes.json()
         
-        if (!res.ok) {
-          // Try to get error message
+        if (!healthData.hasDatabaseUrl) {
+          setServerStatus('error')
+          setDbError('DATABASE_URL belum dikonfigurasi di Vercel')
+          setHasUsers(false)
+          return
+        }
+
+        setServerStatus('ok')
+
+        // Then check users
+        const usersRes = await fetch('/api/users')
+        
+        if (!usersRes.ok) {
+          const text = await usersRes.text()
           try {
-            const errorData = await res.json()
-            setDbError(errorData.error || 'Gagal terhubung ke database')
+            const errorData = JSON.parse(text)
+            setDbError(errorData.error || 'Gagal mengambil data user')
           } catch {
-            setDbError('Gagal terhubung ke database')
+            setDbError(`Server error: ${usersRes.status}`)
           }
           setHasUsers(false)
           return
         }
-        
-        const text = await res.text()
+
+        const text = await usersRes.text()
         if (!text) {
-          setDbError('Response kosong dari server')
+          setDbError(null)
           setHasUsers(false)
           return
         }
-        
+
         try {
           const users = JSON.parse(text)
           if (Array.isArray(users)) {
@@ -86,32 +108,33 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
             setHasUsers(false)
           }
         } catch {
-          setDbError('Format response tidak valid')
+          setDbError('Format data tidak valid')
           setHasUsers(false)
         }
       } catch (err) {
-        console.error('Check users error:', err)
+        console.error('Check server error:', err)
+        setServerStatus('error')
         setDbError('Tidak dapat terhubung ke server')
         setHasUsers(false)
       }
     }
-    checkUsers()
+    checkServer()
   }, [isSeeding])
 
   // Loading state
-  if (hasUsers === null) {
+  if (serverStatus === 'checking' || hasUsers === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-violet-100">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-violet-600 mx-auto mb-4" />
-          <p className="text-slate-600">Memuat...</p>
+          <p className="text-slate-600">Memeriksa server...</p>
         </div>
       </div>
     )
   }
 
-  // No users or database error - show seed button
-  if (!hasUsers) {
+  // Server error or no users
+  if (!hasUsers || serverStatus === 'error') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 via-blue-50 to-violet-100 p-4">
         <Card className="max-w-md w-full shadow-2xl border-0">
@@ -126,15 +149,23 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
             </div>
           </CardHeader>
           <CardContent className="text-center">
-            {dbError ? (
+            {dbError && (
               <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm text-left flex items-start gap-2">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-medium">Perhatian</p>
+                <div className="text-left">
+                  <p className="font-medium">Konfigurasi Diperlukan</p>
                   <p className="text-xs mt-1">{dbError}</p>
+                  {dbError.includes('DATABASE_URL') && (
+                    <p className="text-xs mt-2 text-amber-600">
+                      1. Buka Vercel Dashboard → Settings → Environment Variables<br/>
+                      2. Tambahkan DATABASE_URL dengan nilai dari Neon.tech<br/>
+                      3. Redeploy aplikasi
+                    </p>
+                  )}
                 </div>
               </div>
-            ) : (
+            )}
+            {!dbError && (
               <p className="text-sm text-slate-600 mb-4">
                 Database belum diinisialisasi. Klik tombol di bawah untuk membuat data demo.
               </p>
@@ -145,23 +176,32 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
                 <div>
                   <p className="font-medium">Gagal menginisialisasi database</p>
                   <p className="text-xs mt-1 text-red-600">{seedError}</p>
-                  <p className="text-xs mt-2 text-red-500">Pastikan DATABASE_URL sudah dikonfigurasi dengan benar di Vercel.</p>
                 </div>
               </div>
             )}
-            <Button 
-              onClick={onSeed} 
-              disabled={isSeeding}
-              className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-md shadow-violet-500/20"
-              size="lg"
-            >
-              {isSeeding ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Memproses...
-                </>
-              ) : 'Inisialisasi Database Demo'}
-            </Button>
+            <div className="space-y-2">
+              <Button 
+                onClick={onSeed} 
+                disabled={isSeeding}
+                className="w-full bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-md shadow-violet-500/20"
+                size="lg"
+              >
+                {isSeeding ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Memproses...
+                  </>
+                ) : 'Inisialisasi Database Demo'}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={() => window.location.reload()} 
+                className="w-full gap-2"
+              >
+                <RefreshCw className="w-4 h-4" />
+                Refresh Halaman
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -180,18 +220,15 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         body: JSON.stringify({ email, password })
       })
 
-      // Safely parse response
-      let data: { error?: string; user?: { id: string; name: string }; mustChangePassword?: boolean } = {}
-      try {
-        const text = await response.text()
-        if (text) {
-          data = JSON.parse(text)
-        }
-      } catch {
-        setError('Gagal memproses response dari server')
+      // Check content type first
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        setError('Server error. Silakan hubungi administrator.')
         setIsLoading(false)
         return
       }
+
+      const data = await response.json()
 
       if (!response.ok) {
         setError(data.error || 'Login gagal. Silakan coba lagi.')
@@ -221,7 +258,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
       }
     } catch (err) {
       console.error('Login error:', err)
-      setError('Terjadi kesalahan jaringan. Silakan coba lagi.')
+      setError('Terjadi kesalahan. Silakan coba lagi.')
     } finally {
       setIsLoading(false)
     }
@@ -254,17 +291,14 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         })
       })
 
-      let data: { success?: boolean; error?: string } = {}
-      try {
-        const text = await response.text()
-        if (text) {
-          data = JSON.parse(text)
-        }
-      } catch {
-        setError('Gagal memproses response dari server')
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        setError('Server error. Silakan hubungi administrator.')
         setIsLoading(false)
         return
       }
+
+      const data = await response.json()
 
       if (!response.ok) {
         setError(data.error || 'Gagal mengubah password. Silakan coba lagi.')
@@ -272,7 +306,6 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
         return
       }
 
-      // Update saved credentials with new password if remember me was checked
       if (rememberMe) {
         localStorage.setItem(REMEMBER_ME_KEY, JSON.stringify({ email, password: newPassword }))
       }
@@ -284,7 +317,7 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
       setNewPassword('')
       setConfirmPassword('')
     } catch {
-      setError('Terjadi kesalahan jaringan. Silakan coba lagi.')
+      setError('Terjadi kesalahan. Silakan coba lagi.')
     } finally {
       setIsLoading(false)
     }
@@ -439,7 +472,6 @@ export function LoginView({ onSeed, isSeeding, seedError }: LoginViewProps) {
               </div>
             </div>
 
-            {/* Remember Me Checkbox */}
             <div className="flex items-center space-x-2">
               <Checkbox 
                 id="rememberMe" 
