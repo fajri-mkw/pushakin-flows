@@ -21,21 +21,20 @@ import {
   UserCircle,
   Loader2,
   Filter,
-  Users,
-  Cloud
+  Users
 } from 'lucide-react'
 import { useState, useRef, useMemo } from 'react'
 import jsPDF from 'jspdf'
 import { toast } from 'sonner'
+import * as XLSX from 'xlsx'
 
 export function ReportsView() {
   const { projects, users, selectedProjectId, setSelectedProjectId, currentUser } = useAppStore()
   const [selectedUserId, setSelectedUserId] = useState<string>('all')
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
-  const [isExportingSheets, setIsExportingSheets] = useState(false)
+  const [isExportingExcel, setIsExportingExcel] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
   
-  // Filter completed projects based on selected user
   const completedProjects = useMemo(() => {
     const completed = projects.filter(p => p.currentStage === 5)
     
@@ -60,162 +59,203 @@ export function ReportsView() {
     return d.toLocaleDateString('id-ID', { dateStyle: 'medium' })
   }
 
-  // Export all filtered projects to single Google Sheets file (TSV)
-  const handleExportAllToGoogleSheets = () => {
-    setIsExportingSheets(true)
+  // Export all filtered projects to Excel
+  const handleExportAllToExcel = () => {
+    setIsExportingExcel(true)
     
     try {
-      let tsvContent = ""
+      const workbook = XLSX.utils.book_new()
       
-      // Main header
-      tsvContent += "REKAP LAPORAN KEGIATAN PRODUKSI\n"
-      tsvContent += "Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi\n"
-      tsvContent += `Tanggal Export\t${new Date().toLocaleString('id-ID')}\n`
-      
-      if (selectedUserId !== 'all') {
-        const filteredUser = users.find(u => u.id === selectedUserId)
-        tsvContent += `Filter Petugas\t${filteredUser?.name || 'Unknown'}\n`
-      }
-      tsvContent += `Total Proyek\t${completedProjects.length}\n`
-      tsvContent += "\n"
-      
-      // Summary table
-      tsvContent += "RINGKASAN PROYEK\n"
-      tsvContent += "No\tID Proyek\tJudul\tUnit Pemohon\tLokasi\tWaktu Selesai\tPIC\tJumlah Tugas\n"
+      // Sheet 1: Ringkasan
+      const summaryData = [
+        ['REKAP LAPORAN KEGIATAN PRODUKSI'],
+        ['Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi'],
+        [],
+        ['Tanggal Export', new Date().toLocaleString('id-ID')],
+        selectedUserId !== 'all' ? ['Filter Petugas', users.find(u => u.id === selectedUserId)?.name || 'Unknown'] : [],
+        ['Total Proyek', completedProjects.length.toString()],
+        [],
+        ['RINGKASAN PROYEK'],
+        ['No', 'ID Proyek', 'Judul', 'Unit Pemohon', 'Lokasi', 'Waktu Selesai', 'PIC', 'Jumlah Tugas']
+      ]
       
       completedProjects.forEach((p, idx) => {
         const tasksCount = selectedUserId !== 'all' 
           ? p.tasks.filter(t => t.assignedTo === selectedUserId).length
           : p.tasks.length
-        tsvContent += `${idx + 1}\t${p.id}\t${p.title}\t${p.requesterUnit}\t${p.location || '-'}\t${formatDateShort(p.createdAt)}\t${p.picName || '-'}\t${tasksCount}\n`
+        summaryData.push([
+          (idx + 1).toString(),
+          p.id,
+          p.title,
+          p.requesterUnit,
+          p.location || '-',
+          formatDateShort(p.createdAt),
+          p.picName || '-',
+          tasksCount.toString()
+        ])
       })
-      tsvContent += "\n\n"
       
-      // Detail each project
+      const summarySheet = XLSX.utils.aoa_to_sheet(summaryData)
+      
+      // Set column widths
+      summarySheet['!cols'] = [
+        { wch: 5 }, { wch: 15 }, { wch: 40 }, { wch: 20 }, 
+        { wch: 20 }, { wch: 20 }, { wch: 20 }, { wch: 12 }
+      ]
+      
+      XLSX.utils.book_append_sheet(workbook, summarySheet, 'Ringkasan')
+      
+      // Sheet 2: Detail Tugas
+      const detailData = [
+        ['DETAIL TUGAS PER PROYEK'],
+        [],
+      ]
+      
       completedProjects.forEach((project, pIdx) => {
         const tasksToExport = selectedUserId !== 'all' 
           ? project.tasks.filter(t => t.assignedTo === selectedUserId)
           : project.tasks
         
-        tsvContent += `═══════════════════════════════════════════════════════════════\n`
-        tsvContent += `PROYEK ${pIdx + 1}: ${project.title}\n`
-        tsvContent += `═══════════════════════════════════════════════════════════════\n`
-        tsvContent += `ID\t${project.id}\n`
-        tsvContent += `Unit Pemohon\t${project.requesterUnit}\n`
-        tsvContent += `Lokasi\t${project.location || '-'}\n`
-        tsvContent += `Waktu Pelaksanaan\t${formatDateTime(project.executionTime)}\n`
-        tsvContent += `PIC\t${project.picName || '-'} (${project.picWhatsApp || '-'})\n`
-        tsvContent += `Deskripsi\t${project.description}\n`
-        tsvContent += "\n"
-        tsvContent += "TUGAS:\n"
-        tsvContent += "No\tTahap\tPeran\tPetugas\tStatus\tTautan/Catatan\n"
+        detailData.push([`PROYEK ${pIdx + 1}: ${project.title}`])
+        detailData.push(['ID', project.id])
+        detailData.push(['Unit Pemohon', project.requesterUnit])
+        detailData.push(['Lokasi', project.location || '-'])
+        detailData.push(['Waktu Pelaksanaan', formatDateTime(project.executionTime)])
+        detailData.push(['PIC', `${project.picName || '-'} (${project.picWhatsApp || '-'})`])
+        detailData.push(['Deskripsi', project.description])
+        detailData.push([])
+        detailData.push(['No', 'Tahap', 'Peran', 'Petugas', 'Status', 'Tautan/Catatan'])
         
         tasksToExport.forEach((t, idx) => {
           const user = users.find(u => u.id === t.assignedTo)
           const userName = user ? user.name : 'Tidak ada'
           const notes = t.data?.link || t.data?.notes || 'Selesai tanpa tautan'
-          tsvContent += `${idx + 1}\tTahap ${t.stage}\t${t.role}\t${userName}\t${t.status === 'completed' ? '✓' : '○'}\t${notes}\n`
+          detailData.push([
+            (idx + 1).toString(),
+            `Tahap ${t.stage}`,
+            t.role,
+            userName,
+            t.status === 'completed' ? 'Selesai' : 'Pending',
+            notes
+          ])
         })
-        tsvContent += "\n"
+        detailData.push([])
       })
       
-      const blob = new Blob(["\ufeff" + tsvContent], { type: 'text/tab-separated-values;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
+      const detailSheet = XLSX.utils.aoa_to_sheet(detailData)
+      detailSheet['!cols'] = [
+        { wch: 5 }, { wch: 12 }, { wch: 30 }, { wch: 25 }, 
+        { wch: 12 }, { wch: 50 }
+      ]
+      
+      XLSX.utils.book_append_sheet(workbook, detailSheet, 'Detail Tugas')
+      
+      // Generate and download
       const fileName = selectedUserId !== 'all' 
-        ? `Rekap_Laporan_${users.find(u => u.id === selectedUserId)?.name?.replace(/[^a-zA-Z0-9]/g, '_')}.tsv`
-        : `Rekap_Laporan_Semua_Proyek.tsv`
-      link.download = fileName
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+        ? `Rekap_Laporan_${users.find(u => u.id === selectedUserId)?.name?.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
+        : `Rekap_Laporan_Semua_Proyek.xlsx`
       
-      toast.success("File berhasil diunduh!", {
-        description: "Import ke Google Sheets: File > Import > Upload file TSV"
-      })
+      XLSX.writeFile(workbook, fileName)
+      
+      toast.success("File Excel berhasil dibuat!")
     } catch (error) {
-      toast.error("Gagal mengekspor file")
+      console.error('Error exporting to Excel:', error)
+      toast.error("Gagal mengekspor ke Excel")
     } finally {
-      setIsExportingSheets(false)
+      setIsExportingExcel(false)
     }
   }
 
-  // Export single project to Google Sheets (TSV)
-  const handleExportProjectToGoogleSheets = (project: typeof projects[0]) => {
-    setIsExportingSheets(true)
+  // Export single project to Excel
+  const handleExportProjectToExcel = (project: typeof projects[0]) => {
+    setIsExportingExcel(true)
     
     try {
       const tasksToExport = selectedUserId !== 'all' 
         ? project.tasks.filter(t => t.assignedTo === selectedUserId)
         : project.tasks
       
-      let tsvContent = ""
+      const workbook = XLSX.utils.book_new()
       
-      tsvContent += "LAPORAN KEGIATAN PRODUKSI\n"
-      tsvContent += "Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi\n"
-      tsvContent += "\n"
-      tsvContent += "INFORMASI PROYEK\n"
-      tsvContent += `ID Proyek\t${project.id}\n`
-      tsvContent += `Judul Kegiatan\t${project.title}\n`
-      tsvContent += `Deskripsi\t${project.description}\n`
-      tsvContent += `Unit Pemohon\t${project.requesterUnit}\n`
-      tsvContent += `Lokasi\t${project.location || '-'}\n`
-      tsvContent += `Waktu Pelaksanaan\t${formatDateTime(project.executionTime)}\n`
-      tsvContent += `PIC\t${project.picName || '-'}\n`
-      tsvContent += `No. WhatsApp PIC\t${project.picWhatsApp || '-'}\n`
-      tsvContent += `Waktu Selesai\t${formatDateTime(project.createdAt)}\n`
+      // Sheet 1: Informasi Proyek
+      const infoData = [
+        ['LAPORAN KEGIATAN PRODUKSI'],
+        ['Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi'],
+        [],
+        ['INFORMASI PROYEK'],
+        ['ID Proyek', project.id],
+        ['Judul Kegiatan', project.title],
+        ['Deskripsi', project.description],
+        ['Unit Pemohon', project.requesterUnit],
+        ['Lokasi', project.location || '-'],
+        ['Waktu Pelaksanaan', formatDateTime(project.executionTime)],
+        ['PIC', project.picName || '-'],
+        ['No. WhatsApp PIC', project.picWhatsApp || '-'],
+        ['Waktu Selesai', formatDateTime(project.createdAt)],
+        [],
+        ['JENIS KEGIATAN'],
+      ]
+      
+      project.activityTypes.forEach(a => {
+        infoData.push(['', a])
+      })
+      
+      infoData.push([])
+      infoData.push(['KEBUTUHAN OUTPUT'])
+      project.outputNeeds.forEach(o => {
+        infoData.push(['', o])
+      })
       
       if (selectedUserId !== 'all') {
-        const filteredUser = users.find(u => u.id === selectedUserId)
-        tsvContent += `Filter Petugas\t${filteredUser?.name || 'Unknown'}\n`
+        infoData.push([])
+        infoData.push(['FILTER PETUGAS', users.find(u => u.id === selectedUserId)?.name || 'Unknown'])
       }
-      tsvContent += "\n"
       
-      tsvContent += "JENIS KEGIATAN\n"
-      project.activityTypes.forEach(a => {
-        tsvContent += `\t${a}\n`
-      })
-      tsvContent += "\n"
+      const infoSheet = XLSX.utils.aoa_to_sheet(infoData)
+      infoSheet['!cols'] = [{ wch: 20 }, { wch: 60 }]
+      XLSX.utils.book_append_sheet(workbook, infoSheet, 'Informasi Proyek')
       
-      tsvContent += "KEBUTUHAN OUTPUT\n"
-      project.outputNeeds.forEach(o => {
-        tsvContent += `\t${o}\n`
-      })
-      tsvContent += "\n"
-      
-      tsvContent += "REKAPITULASI TIM & BUKTI HASIL\n"
-      tsvContent += "No\tTahap\tPeran\tPetugas\tStatus\tTautan Hasil / Catatan\n"
+      // Sheet 2: Rekapitulasi Tugas
+      const taskData = [
+        ['REKAPITULASI TIM & BUKTI HASIL'],
+        [],
+        ['No', 'Tahap', 'Peran', 'Petugas', 'Status', 'Tautan Hasil / Catatan']
+      ]
       
       tasksToExport.forEach((t, idx) => {
         const user = users.find(u => u.id === t.assignedTo)
         const userName = user ? user.name : 'Tidak ada'
         const notes = t.data?.link || t.data?.notes || 'Selesai tanpa tautan'
-        tsvContent += `${idx + 1}\tTahap ${t.stage}\t${t.role}\t${userName}\t${t.status === 'completed' ? 'Selesai' : 'Belum'}\t${notes}\n`
+        taskData.push([
+          (idx + 1).toString(),
+          `Tahap ${t.stage}`,
+          t.role,
+          userName,
+          t.status === 'completed' ? 'Selesai' : 'Pending',
+          notes
+        ])
       })
       
-      const blob = new Blob(["\ufeff" + tsvContent], { type: 'text/tab-separated-values;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement("a")
-      link.href = url
-      link.download = `Laporan_${project.title.replace(/[^a-zA-Z0-9]/g, '_')}.tsv`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
+      const taskSheet = XLSX.utils.aoa_to_sheet(taskData)
+      taskSheet['!cols'] = [
+        { wch: 5 }, { wch: 12 }, { wch: 30 }, { wch: 25 }, 
+        { wch: 12 }, { wch: 50 }
+      ]
+      XLSX.utils.book_append_sheet(workbook, taskSheet, 'Rekapitulasi Tugas')
       
-      toast.success("File berhasil diunduh!", {
-        description: "Import ke Google Sheets: File > Import > Upload file TSV"
-      })
+      const fileName = `Laporan_${project.title.replace(/[^a-zA-Z0-9]/g, '_')}.xlsx`
+      XLSX.writeFile(workbook, fileName)
+      
+      toast.success("File Excel berhasil dibuat!")
     } catch (error) {
-      toast.error("Gagal mengekspor file")
+      console.error('Error exporting to Excel:', error)
+      toast.error("Gagal mengekspor ke Excel")
     } finally {
-      setIsExportingSheets(false)
+      setIsExportingExcel(false)
     }
   }
 
-  // Export all filtered projects to single PDF
+  // Export all to PDF
   const handleExportAllToPDF = async () => {
     setIsGeneratingPDF(true)
     
@@ -253,7 +293,6 @@ export function ReportsView() {
       pdf.text('Tim Pusat Hubungan Masyarakat dan Keterbukaan Informasi', pageWidth / 2, yPosition, { align: 'center' })
       yPosition += 8
       
-      // Filter info
       if (selectedUserId !== 'all') {
         const filteredUser = users.find(u => u.id === selectedUserId)
         pdf.setFontSize(9)
@@ -274,7 +313,6 @@ export function ReportsView() {
       pdf.line(margin, yPosition, pageWidth - margin, yPosition)
       yPosition += 10
       
-      // Each project
       for (let pIdx = 0; pIdx < completedProjects.length; pIdx++) {
         const project = completedProjects[pIdx]
         const tasksToShow = selectedUserId !== 'all' 
@@ -283,7 +321,6 @@ export function ReportsView() {
         
         checkNewPage(50)
         
-        // Project header
         pdf.setFillColor(249, 250, 251)
         pdf.roundedRect(margin, yPosition, contentWidth, 25, 2, 2, 'F')
         
@@ -299,7 +336,6 @@ export function ReportsView() {
         
         yPosition += 28
         
-        // Tasks table header
         pdf.setFillColor(124, 58, 237)
         pdf.rect(margin, yPosition, contentWidth, 6, 'F')
         pdf.setTextColor(255, 255, 255)
@@ -313,7 +349,6 @@ export function ReportsView() {
         pdf.setTextColor(0, 0, 0)
         yPosition += 8
         
-        // Task rows
         tasksToShow.forEach((task, idx) => {
           checkNewPage(10)
           
@@ -356,7 +391,6 @@ export function ReportsView() {
         }
       }
       
-      // Footer
       yPosition += 10
       checkNewPage(10)
       pdf.setLineWidth(0.2)
@@ -410,7 +444,6 @@ export function ReportsView() {
         ? project.tasks.filter(t => t.assignedTo === selectedUserId)
         : project.tasks
       
-      // Header
       pdf.setFontSize(20)
       pdf.setFont('helvetica', 'bold')
       pdf.text('LAPORAN KEGIATAN', pageWidth / 2, yPosition, { align: 'center' })
@@ -434,7 +467,6 @@ export function ReportsView() {
       pdf.text(`Ref ID: ${project.id}`, pageWidth / 2, yPosition, { align: 'center' })
       yPosition += 10
       
-      // Filter info
       if (selectedUserId !== 'all') {
         const filteredUser = users.find(u => u.id === selectedUserId)
         pdf.setFontSize(9)
@@ -449,7 +481,6 @@ export function ReportsView() {
       pdf.line(margin, yPosition, pageWidth - margin, yPosition)
       yPosition += 10
       
-      // Info Grid
       pdf.setFontSize(10)
       const infoItems = [
         { label: 'Unit Pemohon', value: project.requesterUnit },
@@ -485,7 +516,6 @@ export function ReportsView() {
       pdf.line(margin, yPosition, pageWidth - margin, yPosition)
       yPosition += 8
       
-      // Description
       checkNewPage(20)
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(10)
@@ -502,7 +532,6 @@ export function ReportsView() {
       })
       yPosition += 5
       
-      // Activity Types
       if (project.activityTypes.length > 0) {
         checkNewPage(10)
         pdf.setFontSize(8)
@@ -525,13 +554,11 @@ export function ReportsView() {
       pdf.line(margin, yPosition, pageWidth - margin, yPosition)
       yPosition += 8
       
-      // Tasks section
       pdf.setFont('helvetica', 'bold')
       pdf.setFontSize(10)
       pdf.text('REKAPITULASI TIM & BUKTI HASIL', margin, yPosition)
       yPosition += 8
       
-      // Task table header
       pdf.setFillColor(124, 58, 237)
       pdf.rect(margin, yPosition, contentWidth, 6, 'F')
       pdf.setTextColor(255, 255, 255)
@@ -544,7 +571,6 @@ export function ReportsView() {
       pdf.setTextColor(0, 0, 0)
       yPosition += 8
       
-      // Task rows
       tasksToShow.forEach((task, idx) => {
         checkNewPage(10)
         
@@ -576,7 +602,6 @@ export function ReportsView() {
         yPosition += 8
       })
       
-      // Footer
       yPosition += 15
       checkNewPage(15)
       pdf.setLineWidth(0.2)
@@ -599,46 +624,6 @@ export function ReportsView() {
     }
   }
 
-  // CSV export for single project
-  const handleDownloadCSV = (project: typeof projects[0]) => {
-    const tasksToExport = selectedUserId !== 'all' 
-      ? project.tasks.filter(t => t.assignedTo === selectedUserId)
-      : project.tasks
-    
-    let csvContent = "data:text/csv;charset=utf-8,"
-    csvContent += "LAPORAN KEGIATAN PRODUKSI\n\n"
-    csvContent += `ID Proyek,${project.id}\n`
-    csvContent += `Judul Kegiatan,${project.title}\n`
-    csvContent += `Unit Pemohon,${project.requesterUnit}\n`
-    csvContent += `Lokasi,${project.location}\n`
-    csvContent += `Waktu Pelaksanaan,${formatDateTime(project.executionTime)}\n`
-    csvContent += `PIC,${project.picName} (${project.picWhatsApp})\n`
-    
-    if (selectedUserId !== 'all') {
-      const filteredUser = users.find(u => u.id === selectedUserId)
-      csvContent += `Filter Petugas,${filteredUser?.name || 'Unknown'}\n`
-    }
-    csvContent += "\n"
-    
-    csvContent += "RINCIAN TUGAS DAN HASIL\n"
-    csvContent += "Tahap,Peran,Petugas,Status,Tautan Hasil / Catatan\n"
-    
-    tasksToExport.forEach(t => {
-      const user = users.find(u => u.id === t.assignedTo)
-      const userName = user ? user.name : 'Tidak ada'
-      const notes = t.data?.link || t.data?.notes || 'Selesai tanpa tautan'
-      csvContent += `Tahap ${t.stage},${t.role},${userName},${t.status === 'completed' ? 'Selesai' : 'Belum'},"${notes}"\n`
-    })
-
-    const encodedUri = encodeURI(csvContent)
-    const link = document.createElement("a")
-    link.setAttribute("href", encodedUri)
-    link.setAttribute("download", `Laporan_${project.title.replace(/[^a-zA-Z0-9]/g, '_')}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-  }
-
   // Detail View
   if (selectedProjectId) {
     const report = completedProjects.find(p => p.id === selectedProjectId)
@@ -658,20 +643,12 @@ export function ReportsView() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              onClick={() => handleDownloadCSV(report)}
+              onClick={() => handleExportProjectToExcel(report)}
+              disabled={isExportingExcel}
               className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>CSV</span>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => handleExportProjectToGoogleSheets(report)}
-              disabled={isExportingSheets}
-              className="gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
-            >
-              <Cloud className="w-4 h-4" />
-              <span>Google Sheets</span>
+              <span>{isExportingExcel ? 'Mengunduh...' : 'Excel'}</span>
             </Button>
             <Button
               onClick={() => handleExportProjectToPDF(report)}
@@ -887,12 +864,12 @@ export function ReportsView() {
               <div className="flex items-center gap-2">
                 <Button
                   variant="outline"
-                  onClick={handleExportAllToGoogleSheets}
-                  disabled={isExportingSheets}
-                  className="gap-2 bg-blue-50 text-blue-700 hover:bg-blue-100 border-blue-200"
+                  onClick={handleExportAllToExcel}
+                  disabled={isExportingExcel}
+                  className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
                 >
-                  <Cloud className="w-4 h-4" />
-                  <span>Export All (Sheets)</span>
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>{isExportingExcel ? 'Mengunduh...' : 'Export All (Excel)'}</span>
                 </Button>
                 <Button
                   onClick={handleExportAllToPDF}
