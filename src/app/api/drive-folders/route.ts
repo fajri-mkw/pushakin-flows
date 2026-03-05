@@ -1,18 +1,23 @@
 import { db } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 
-// PUT update drive folder links
+// PUT update drive folder links and role assignments
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { projectId, folders } = body
+    const { projectId, folders } = body as {
+      projectId: string
+      folders: { id: string; link: string; assignedRoles?: string[] }[]
+    }
     
-    // Update each folder
     const updates = await Promise.all(
-      folders.map((f: { id: string; link: string }) => 
+      folders.map((f) => 
         db.driveFolder.update({
           where: { id: f.id },
-          data: { link: f.link }
+          data: { 
+            link: f.link,
+            assignedRoles: f.assignedRoles ? JSON.stringify(f.assignedRoles) : null
+          }
         })
       )
     )
