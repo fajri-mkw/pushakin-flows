@@ -16,7 +16,9 @@ import {
   Loader2,
   ExternalLink,
   AlertCircle,
-  HardDrive
+  HardDrive,
+  Wrench,
+  Shield
 } from 'lucide-react'
 import { useState, useEffect } from 'react'
 import { cn } from '@/lib/utils'
@@ -27,12 +29,15 @@ interface SettingsData {
   driveSharedDriveId: string
   hasServiceAccountKey: boolean
   driveApiKey: string
+  maintenanceMode: boolean
+  maintenanceMessage: string
 }
 
 export function SettingsView() {
   const { currentUser, showAlert } = useAppStore()
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
+  const [isSavingMaintenance, setIsSavingMaintenance] = useState(false)
   const [isTesting, setIsTesting] = useState(false)
   const [connectionStatus, setConnectionStatus] = useState<'unknown' | 'connected' | 'disconnected'>('unknown')
   
@@ -41,7 +46,9 @@ export function SettingsView() {
     driveParentFolderId: '',
     driveSharedDriveId: '',
     hasServiceAccountKey: false,
-    driveApiKey: ''
+    driveApiKey: '',
+    maintenanceMode: false,
+    maintenanceMessage: ''
   })
   const [serviceAccountKey, setServiceAccountKey] = useState('')
 
@@ -57,7 +64,9 @@ export function SettingsView() {
             driveParentFolderId: data.driveParentFolderId || '',
             driveSharedDriveId: data.driveSharedDriveId || '',
             hasServiceAccountKey: data.hasServiceAccountKey || false,
-            driveApiKey: data.driveApiKey || ''
+            driveApiKey: data.driveApiKey || '',
+            maintenanceMode: data.maintenanceMode || false,
+            maintenanceMessage: data.maintenanceMessage || ''
           })
         }
       } catch (error) {
@@ -138,6 +147,42 @@ export function SettingsView() {
     }
   }
 
+  // Save maintenance settings
+  const handleSaveMaintenance = async () => {
+    setIsSavingMaintenance(true)
+    try {
+      const response = await fetch('/api/maintenance', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          maintenanceMode: settings.maintenanceMode,
+          maintenanceMessage: settings.maintenanceMessage,
+          userId: currentUser?.id
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setSettings(prev => ({
+          ...prev,
+          maintenanceMode: data.maintenance,
+          maintenanceMessage: data.message || ''
+        }))
+        showAlert(settings.maintenanceMode
+          ? 'Mode maintenance diaktifkan! User lain tidak dapat mengakses.'
+          : 'Mode maintenance dinonaktifkan! User lain dapat mengakses kembali.'
+        )
+      } else {
+        const data = await response.json()
+        showAlert(data.error || 'Gagal menyimpan pengaturan maintenance')
+      }
+    } catch {
+      showAlert('Terjadi kesalahan saat menyimpan')
+    } finally {
+      setIsSavingMaintenance(false)
+    }
+  }
+
   if (currentUser?.role !== 'Admin') {
     return (
       <Card className="max-w-2xl mx-auto">
@@ -168,9 +213,128 @@ export function SettingsView() {
         <SettingsIcon className="w-6 h-6 text-stone-600" />
         <div>
           <h1 className="text-2xl font-bold text-stone-800">Pengaturan</h1>
-          <p className="text-stone-500 text-sm">Konfigurasi integrasi Google Drive</p>
+          <p className="text-stone-500 text-sm">Konfigurasi sistem Pushakin Flows</p>
         </div>
       </div>
+
+      {/* Maintenance Mode Card - Admin Only */}
+      <Card className={cn(
+        "border-2 transition-all",
+        settings.maintenanceMode
+          ? "bg-red-50 border-red-300"
+          : "bg-white border-stone-200"
+      )}>
+        <CardHeader className="border-b border-stone-100">
+          <div className="flex items-center gap-3">
+            <div className={cn(
+              "p-2 rounded-lg",
+              settings.maintenanceMode ? "bg-red-100" : "bg-amber-50"
+            )}>
+              <Wrench className={cn(
+                "w-5 h-5",
+                settings.maintenanceMode ? "text-red-600" : "text-amber-600"
+              )} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-lg">Mode Maintenance</CardTitle>
+                {settings.maintenanceMode && (
+                  <span className="px-2 py-0.5 bg-red-500 text-white text-xs rounded-full font-medium animate-pulse">
+                    AKTIF
+                  </span>
+                )}
+              </div>
+              <CardDescription>
+                Aktifkan untuk membatasi akses hanya untuk Admin
+              </CardDescription>
+            </div>
+            <Shield className="w-5 h-5 text-violet-500" />
+          </div>
+        </CardHeader>
+
+        <CardContent className="p-6 space-y-4">
+          {/* Warning */}
+          <div className={cn(
+            "p-4 rounded-xl text-sm",
+            settings.maintenanceMode
+              ? "bg-red-100 text-red-800"
+              : "bg-amber-50 text-amber-800"
+          )}>
+            <div className="flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold">
+                  {settings.maintenanceMode
+                    ? "⚠️ Mode Maintenance Sedang Aktif"
+                    : "ℹ️ Tentang Mode Maintenance"
+                  }
+                </p>
+                <p className="mt-1">
+                  {settings.maintenanceMode
+                    ? "Semua user selain Admin akan melihat halaman maintenance dan tidak dapat mengakses aplikasi."
+                    : "Saat diaktifkan, hanya Admin yang dapat mengakses aplikasi. User lain akan melihat halaman maintenance."
+                  }
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Enable Toggle */}
+          <div className="flex items-center justify-between p-4 rounded-xl bg-stone-50">
+            <div>
+              <Label className="text-base font-semibold">Aktifkan Maintenance</Label>
+              <p className="text-sm text-stone-500 mt-1">
+                Non-Admin tidak dapat mengakses aplikasi
+              </p>
+            </div>
+            <Switch
+              checked={settings.maintenanceMode}
+              onCheckedChange={(checked) =>
+                setSettings(prev => ({ ...prev, maintenanceMode: checked }))
+              }
+            />
+          </div>
+
+          {/* Maintenance Message */}
+          <div className="space-y-2">
+            <Label htmlFor="maintenanceMessage">Pesan Maintenance (Opsional)</Label>
+            <Textarea
+              id="maintenanceMessage"
+              value={settings.maintenanceMessage}
+              onChange={(e) =>
+                setSettings(prev => ({ ...prev, maintenanceMessage: e.target.value }))
+              }
+              placeholder="Contoh: Sedang melakukan update sistem. Estimasi selesai pukul 14:00 WIB."
+              rows={3}
+            />
+            <p className="text-xs text-stone-500">
+              Pesan ini akan ditampilkan kepada user selama maintenance.
+            </p>
+          </div>
+
+          {/* Save Button */}
+          <div className="flex justify-end pt-2">
+            <Button
+              onClick={handleSaveMaintenance}
+              disabled={isSavingMaintenance}
+              className={cn(
+                settings.maintenanceMode
+                  ? "bg-red-600 hover:bg-red-700"
+                  : "bg-indigo-600 hover:bg-indigo-700"
+              )}
+            >
+              {isSavingMaintenance ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <span>Menyimpan...</span>
+                </>
+              ) : (
+                settings.maintenanceMode ? 'Simpan (Maintenance Aktif)' : 'Simpan Pengaturan'
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Shared Drive Notice */}
       <Card className="bg-amber-50 border-amber-200">

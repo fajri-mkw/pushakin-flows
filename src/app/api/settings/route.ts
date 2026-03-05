@@ -20,7 +20,9 @@ export async function GET() {
       driveParentFolderId: settings.driveParentFolderId || '',
       driveSharedDriveId: settings.driveSharedDriveId || '',
       hasServiceAccountKey: !!settings.driveServiceAccountKey,
-      driveApiKey: settings.driveApiKey || ''
+      driveApiKey: settings.driveApiKey || '',
+      maintenanceMode: settings.maintenanceMode || false,
+      maintenanceMessage: settings.maintenanceMessage || ''
     })
   } catch (error) {
     console.error('Get settings error:', error)
@@ -32,7 +34,7 @@ export async function GET() {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { driveAutoCreate, driveParentFolderId, driveSharedDriveId, driveServiceAccountKey, driveApiKey } = body
+    const { driveAutoCreate, driveParentFolderId, driveSharedDriveId, driveServiceAccountKey, driveApiKey, maintenanceMode, maintenanceMessage } = body
     
     const updateData: {
       driveAutoCreate?: boolean
@@ -40,6 +42,8 @@ export async function PUT(request: NextRequest) {
       driveSharedDriveId?: string | null
       driveServiceAccountKey?: string | null
       driveApiKey?: string | null
+      maintenanceMode?: boolean
+      maintenanceMessage?: string | null
     } = {}
     
     if (typeof driveAutoCreate === 'boolean') {
@@ -57,6 +61,12 @@ export async function PUT(request: NextRequest) {
     if (driveApiKey !== undefined) {
       updateData.driveApiKey = driveApiKey || null
     }
+    if (typeof maintenanceMode === 'boolean') {
+      updateData.maintenanceMode = maintenanceMode
+    }
+    if (maintenanceMessage !== undefined) {
+      updateData.maintenanceMessage = maintenanceMessage || null
+    }
     
     const settings = await db.settings.upsert({
       where: { id: 'main' },
@@ -73,7 +83,9 @@ export async function PUT(request: NextRequest) {
       driveParentFolderId: settings.driveParentFolderId || '',
       driveSharedDriveId: settings.driveSharedDriveId || '',
       hasServiceAccountKey: !!settings.driveServiceAccountKey,
-      driveApiKey: settings.driveApiKey || ''
+      driveApiKey: settings.driveApiKey || '',
+      maintenanceMode: settings.maintenanceMode || false,
+      maintenanceMessage: settings.maintenanceMessage || ''
     })
   } catch (error) {
     console.error('Update settings error:', error)

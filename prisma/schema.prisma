@@ -146,6 +146,8 @@ model Settings {
   driveSharedDriveId    String? // Shared Drive (Team Drive) ID for storage
   driveServiceAccountKey String? // JSON service account key
   driveApiKey           String?
+  maintenanceMode       Boolean  @default(false)
+  maintenanceMessage    String?
   updatedAt             DateTime @updatedAt
 
   @@map("settings")
