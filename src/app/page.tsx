@@ -1,5 +1,6 @@
 'use client'
 
+// Maintenance Mode Feature - Updated for production
 import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useAppStore, type User } from '@/lib/store'

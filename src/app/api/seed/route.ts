@@ -1,5 +1,5 @@
 import { db } from '@/lib/db'
-import { Role } from '@prisma/client'
+import { Role, User } from '@prisma/client'
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 
@@ -44,7 +44,7 @@ export async function GET() {
     const defaultPassword = await bcrypt.hash('pushakin123', 10)
 
     // Create users for each role
-    const users = []
+    const users: User[] = []
     for (let idx = 0; idx < ROLES.length; idx++) {
       const role = ROLES[idx]
       const displayName = ROLE_DISPLAY_NAMES[role]

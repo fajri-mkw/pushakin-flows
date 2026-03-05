@@ -22,8 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from '@/components/ui/tabs'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useAppStore, STAGES, ROLE_CONFIG } from '@/lib/store'
+import { useAppStore, STAGES, ROLE_CONFIG, ROLES } from '@/lib/store'
 import { FileUpload } from '@/components/pushakin/file-upload'
 import { 
   ArrowLeft, 
@@ -40,6 +46,7 @@ import {
   Link as LinkIcon,
   AlertCircle,
   ShieldAlert,
+  Shield,
   PlayCircle,
   FileVideo,
   FileImage,
@@ -96,7 +103,7 @@ export function ProjectDetailView() {
   const project = projects.find(p => p.id === selectedProjectId)
   
   const [isEditDriveOpen, setIsEditDriveOpen] = useState(false)
-  const [driveForm, setDriveForm] = useState<Record<string, string>>({})
+  const [driveRoles, setDriveRoles] = useState<Record<string, string[]>>({})
   const [taskInputs, setTaskInputs] = useState<Record<string, string>>({})
   const [taskVerified, setTaskVerified] = useState<Record<string, boolean>>({})
   
@@ -146,19 +153,20 @@ export function ProjectDetailView() {
   }
 
   const handleOpenEditDrive = () => {
-    const formState: Record<string, string> = {}
+    const rolesState: Record<string, string[]> = {}
     project.driveFolders.forEach(f => {
-      formState[f.id] = f.link
+      rolesState[f.id] = f.assignedRoles || []
     })
-    setDriveForm(formState)
+    setDriveRoles(rolesState)
     setIsEditDriveOpen(true)
   }
 
-  const handleSaveDriveLinks = async (e: React.FormEvent) => {
+  const handleSaveDriveRoles = async (e: React.FormEvent) => {
     e.preventDefault()
     const folders = project.driveFolders.map(f => ({
       id: f.id,
-      link: driveForm[f.id] || f.link
+      link: f.link, // Keep existing link
+      assignedRoles: driveRoles[f.id] || []
     }))
     
     try {
@@ -170,12 +178,13 @@ export function ProjectDetailView() {
       
       const updatedFolders = project.driveFolders.map(f => ({
         ...f,
-        link: driveForm[f.id] || f.link
+        assignedRoles: driveRoles[f.id] || []
       }))
       updateProject({ ...project, driveFolders: updatedFolders })
       setIsEditDriveOpen(false)
+      showAlert('Akses folder berhasil diperbarui')
     } catch {
-      showAlert('Gagal menyimpan tautan drive')
+      showAlert('Gagal menyimpan perubahan akses folder')
     }
   }
 
@@ -464,10 +473,10 @@ export function ProjectDetailView() {
                     variant="outline"
                     size="sm"
                     onClick={handleOpenEditDrive}
-                    className="gap-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                    className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50"
                   >
                     <Edit className="w-3 h-3" />
-                    <span>Atur Folder</span>
+                    <span>Koreksi Folder</span>
                   </Button>
                 )}
               </div>
@@ -729,44 +738,138 @@ export function ProjectDetailView() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Drive Modal */}
+      {/* Edit Drive Modal - Correction Tool */}
       <Dialog open={isEditDriveOpen} onOpenChange={setIsEditDriveOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
-            <DialogTitle>Manajemen Workspace Drive</DialogTitle>
-            <DialogDescription>
-              Tempelkan (Paste) link tautan folder Google Drive yang telah Anda siapkan untuk proyek ini.
+            <DialogTitle className="flex items-center gap-2 text-amber-700">
+              <AlertCircle className="w-5 h-5" />
+              <span>Koreksi Akses Folder</span>
+            </DialogTitle>
+            <DialogDescription className="space-y-2">
+              <span>Gunakan fitur ini untuk memperbaiki kesalahan pengaturan akses role ke folder proyek.</span>
+              <span className="block text-xs text-amber-600 bg-amber-50 p-2 rounded-lg border border-amber-200">
+                ⚠️ Catatan: Perubahan ini akan mempengaruhi akses seluruh tim ke folder proyek.
+              </span>
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSaveDriveLinks} className="space-y-5">
-            <ScrollArea className="max-h-[60vh]">
+          
+          <Tabs defaultValue={project.driveFolders[0]?.id} className="flex-1 flex flex-col min-h-0">
+            <TabsList className="w-full justify-start gap-1 bg-stone-100 p-1 h-auto flex-wrap">
               {project.driveFolders.map((folder) => (
-                <div key={folder.id} className="mb-4">
-                  <Label className="flex items-center gap-2 text-sm font-bold text-stone-700 mb-2">
-                    <Folder className={cn("w-4 h-4", folder.color)} />
-                    <span>Link {folder.name}</span>
-                  </Label>
-                  <Input
-                    required
-                    type="url"
-                    value={driveForm[folder.id] || ''}
-                    onChange={e => setDriveForm({...driveForm, [folder.id]: e.target.value})}
-                    className={cn("mt-1", folder.bg?.replace('50', '50/30'))}
-                    placeholder="https://drive.google.com/drive/folders/..."
-                  />
-                </div>
+                <TabsTrigger 
+                  key={folder.id} 
+                  value={folder.id}
+                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-3 py-1.5 text-xs font-medium"
+                >
+                  {folder.name ? folder.name.split(' (')[0] : 'Folder'}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            
+            <ScrollArea className="flex-1 mt-4 pr-4">
+              {project.driveFolders.map((folder) => (
+                <TabsContent key={folder.id} value={folder.id} className="mt-0">
+                  <div className="space-y-4 p-1">
+                    {/* Folder Info */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl border border-stone-200 bg-gradient-to-r from-stone-50 to-white">
+                      <div className={cn("p-3 rounded-xl", folder.bg || 'bg-stone-100')}>
+                        <Folder className={cn("w-6 h-6", folder.color || 'text-stone-600')} />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-bold text-stone-800">
+                          {folder.name || 'Folder'}
+                        </h4>
+                        <p className="text-sm text-stone-500 mt-0.5">{folder.desc}</p>
+                      </div>
+                    </div>
+                    
+                    {/* Role Access */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+                          <Shield className="w-4 h-4" />
+                          <span>Akses Role</span>
+                        </Label>
+                        {(driveRoles[folder.id] || []).length === 0 && (
+                          <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                            ✓ Semua role dapat mengakses
+                          </span>
+                        )}
+                        {(driveRoles[folder.id] || []).length > 0 && (
+                          <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                            ⚠️ {(driveRoles[folder.id] || []).length} role dibatasi
+                          </span>
+                        )}
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {ROLES.filter(r => r !== 'Admin' && r !== 'Manager').map(role => {
+                          const isSelected = (driveRoles[folder.id] || []).includes(role)
+                          return (
+                            <button
+                              key={role}
+                              type="button"
+                              onClick={() => {
+                                const currentRoles = driveRoles[folder.id] || []
+                                const newRoles = isSelected
+                                  ? currentRoles.filter(r => r !== role)
+                                  : [...currentRoles, role]
+                                setDriveRoles({...driveRoles, [folder.id]: newRoles})
+                              }}
+                              className={cn(
+                                "px-3 py-2 text-xs rounded-lg border text-left transition-all truncate",
+                                isSelected
+                                  ? "bg-amber-100 border-amber-300 text-amber-700 font-medium ring-1 ring-amber-200"
+                                  : "bg-white border-stone-200 text-stone-600 hover:border-amber-200 hover:bg-amber-50/50"
+                              )}
+                            >
+                              <span className="flex items-center gap-2">
+                                {isSelected && <Lock className="w-3 h-3 flex-shrink-0" />}
+                                <span className="truncate">{role}</span>
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                      
+                      {/* Quick Actions */}
+                      <div className="flex gap-2 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setDriveRoles({...driveRoles, [folder.id]: []})}
+                          className="text-xs text-stone-500 hover:text-green-600 underline"
+                        >
+                          Buka akses semua role
+                        </button>
+                        <span className="text-stone-300">|</span>
+                        <button
+                          type="button"
+                          onClick={() => setDriveRoles({
+                            ...driveRoles, 
+                            [folder.id]: ROLES.filter(r => r !== 'Admin' && r !== 'Manager')
+                          })}
+                          className="text-xs text-stone-500 hover:text-amber-600 underline"
+                        >
+                          Batasi akses semua role
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
               ))}
             </ScrollArea>
-            <DialogFooter>
-              <Button type="button" variant="ghost" onClick={() => setIsEditDriveOpen(false)}>
-                Batal
-              </Button>
-              <Button type="submit" className="gap-2">
-                <Save className="w-4 h-4" />
-                <span>Simpan Tautan Drive</span>
-              </Button>
-            </DialogFooter>
-          </form>
+          </Tabs>
+          
+          <DialogFooter className="mt-4 pt-4 border-t">
+            <Button type="button" variant="ghost" onClick={() => setIsEditDriveOpen(false)}>
+              Batal
+            </Button>
+            <Button type="submit" onClick={handleSaveDriveRoles} className="gap-2 bg-amber-600 hover:bg-amber-700">
+              <Save className="w-4 h-4" />
+              <span>Simpan Koreksi</span>
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
