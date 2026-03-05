@@ -14,7 +14,6 @@ export async function GET() {
       })
     }
     
-    // Don't return the full service account key for security
     return NextResponse.json({
       driveAutoCreate: settings.driveAutoCreate || false,
       driveParentFolderId: settings.driveParentFolderId || '',
@@ -71,10 +70,7 @@ export async function PUT(request: NextRequest) {
     const settings = await db.settings.upsert({
       where: { id: 'main' },
       update: updateData,
-      create: {
-        id: 'main',
-        ...updateData
-      }
+      create: { id: 'main', ...updateData }
     })
     
     return NextResponse.json({

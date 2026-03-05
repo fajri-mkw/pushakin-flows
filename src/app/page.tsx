@@ -173,10 +173,7 @@ function AppContent() {
           setProjects(projectsData)
         }
         setIsLoading(false)
-      } catch (error) {
-        console.error('Failed to fetch data:', error)
-        setIsLoading(false)
-      }
+      } catch { setIsLoading(false) }
     }
     fetchData()
   }, [setUsers, setProjects])
@@ -184,15 +181,7 @@ function AppContent() {
   useEffect(() => {
     const fetchNotifications = async () => {
       if (currentUser) {
-        try {
-          const res = await fetch(`/api/notifications?userId=${currentUser.id}`)
-          if (res.ok) {
-            const data = await res.json()
-            setNotifications(data)
-          }
-        } catch (error) {
-          console.error('Failed to fetch notifications:', error)
-        }
+        try { const res = await fetch(`/api/notifications?userId=${currentUser.id}`); if (res.ok) setNotifications(await res.json()) } catch {}
       }
     }
     fetchNotifications()
@@ -201,8 +190,7 @@ function AppContent() {
   }, [currentUser, setNotifications])
 
   const handleSeed = async () => {
-    setIsSeeding(true)
-    setSeedError(undefined)
+    setIsSeeding(true); setSeedError(undefined)
     try {
       const res = await fetch('/api/seed')
       const data = await res.json()
@@ -211,18 +199,12 @@ function AppContent() {
         return
       }
       const usersRes = await fetch('/api/users')
-      if (usersRes.ok) {
-        const usersData = await usersRes.json()
-        setUsersState(usersData)
-        setUsers(usersData)
-      }
-    } catch (error) {
-      console.error('Seed failed:', error)
-      setSeedError('Tidak dapat terhubung ke server. Pastikan DATABASE_URL sudah dikonfigurasi.')
-    } finally {
-      setIsSeeding(false)
-    }
+      if (usersRes.ok) { const usersData = await usersRes.json(); setUsersState(usersData); setUsers(usersData) }
+    } catch { setSeedError('Tidak dapat terhubung ke server.') }
+    finally { setIsSeeding(false) }
   }
+  const handleBackFromPublic = () => { window.location.href = window.location.pathname }
+  const handleAdminLogin = () => { setAdminMaintenanceAccess(true); window.location.reload() }
 
   const handleBackFromPublic = () => window.location.href = window.location.pathname
   const handleAdminLogin = () => { setAdminMaintenanceAccess(true); window.location.reload() }

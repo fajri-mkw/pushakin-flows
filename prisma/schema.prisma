@@ -143,8 +143,8 @@ model Settings {
   id                    String   @id @default("main")
   driveAutoCreate       Boolean  @default(false)
   driveParentFolderId   String?
-  driveSharedDriveId    String? // Shared Drive (Team Drive) ID for storage
-  driveServiceAccountKey String? // JSON service account key
+  driveSharedDriveId    String?
+  driveServiceAccountKey String?
   driveApiKey           String?
   maintenanceMode       Boolean  @default(false)
   maintenanceMessage    String?
