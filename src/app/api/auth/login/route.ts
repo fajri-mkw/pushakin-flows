@@ -2,10 +2,36 @@ import { db, ensureDbConnection } from '@/lib/db'
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 
+// Role display name mapping
+const ROLE_DISPLAY_NAMES: Record<string, string> = {
+  'Admin': 'Admin',
+  'Manager': 'Manager',
+  'Reporter': 'Reporter',
+  'PhotographerAudio': 'Photographer & Audio',
+  'VideographerAudio': 'Videographer & Audio',
+  'EditorMedia': 'Editor (Media)',
+  'EditorWebSocialMedia': 'Editor (Web Article & Social Media)',
+  'GraphicDesigner': 'Graphic Designer',
+  'StreamingOperator': 'Streaming Operator',
+  'PodcastOperator': 'Podcast Operator',
+  'Reviewer': 'Reviewer',
+  'PublisherWeb': 'Publisher Web',
+  'PublisherSocialMedia': 'Publisher Social Media'
+}
+
+// Transform user for frontend
+const transformUser = (user: { id: string; name: string; email: string; whatsapp: string | null; avatar: string | null; role: string }) => ({
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  whatsapp: user.whatsapp || '',
+  avatar: user.avatar || '',
+  role: ROLE_DISPLAY_NAMES[user.role] || user.role
+})
+
 // POST - Login with email and password
 export async function POST(request: NextRequest) {
   try {
-    // Check database connection first
     const isConnected = await ensureDbConnection()
     if (!isConnected) {
       return NextResponse.json({ error: 'Koneksi database gagal. Silakan hubungi administrator.' }, { status: 500 })
@@ -18,7 +44,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email dan password harus diisi' }, { status: 400 })
     }
 
-    // Find user by email
     const user = await db.user.findUnique({
       where: { email: email.toLowerCase() }
     })
@@ -27,9 +52,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
     }
 
-    // Check if user has a real password (not placeholder)
     if (user.password === '$2a$10$placeholder') {
-      // User hasn't set password yet, allow first login with default password
       const defaultPassword = 'pushakin123'
       if (password !== defaultPassword) {
         return NextResponse.json({ 
@@ -38,25 +61,20 @@ export async function POST(request: NextRequest) {
         }, { status: 401 })
       }
       
-      // Return user without password
-      const { password: _, ...userWithoutPassword } = user
       return NextResponse.json({ 
-        user: userWithoutPassword,
+        user: transformUser(user),
         message: 'Login berhasil. Silakan ganti password Anda.',
         mustChangePassword: true
       })
     }
 
-    // Verify password
     const isValidPassword = await bcrypt.compare(password, user.password)
 
     if (!isValidPassword) {
       return NextResponse.json({ error: 'Email atau password salah' }, { status: 401 })
     }
 
-    // Return user without password
-    const { password: _, ...userWithoutPassword } = user
-    return NextResponse.json({ user: userWithoutPassword })
+    return NextResponse.json({ user: transformUser(user) })
 
   } catch (error) {
     console.error('Login error:', error)
