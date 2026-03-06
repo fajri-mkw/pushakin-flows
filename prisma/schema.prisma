@@ -1,13 +1,12 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-// Build: 2024-03-06-force-rebuild-v2
+// This is your Prisma schema file for PostgreSQL (Production)
+// For local dev with SQLite, the build:local script will handle it
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider  = "sqlite"
+  provider  = "postgresql"
   url       = env("DATABASE_URL")
 }
 
@@ -45,14 +44,13 @@ model User {
   id        String   @id @default(cuid())
   name      String
   email     String   @unique
-  password  String   @default("$2a$10$placeholder") // Hashed password, will be set on creation
+  password  String   @default("$2a$10$placeholder")
   whatsapp  String?
   avatar    String?
   role      Role     @default(Reporter)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   tasksAsAssignee  Task[]
   notifications    Notification[]
   projectsAsManager Project[]
@@ -69,17 +67,16 @@ model Project {
   executionTime   String?
   picName         String?
   picWhatsApp     String?
-  activityTypes   String   // JSON array
+  activityTypes   String
   customActivity  String?
-  outputNeeds     String   // JSON array
+  outputNeeds     String
   customOutput    String?
   currentStage    Int      @default(1)
   managerId       String
-  publicToken     String?  @unique // Token for public sharing
+  publicToken     String?  @unique
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  // Relations
   manager      User           @relation(fields: [managerId], references: [id], onDelete: Cascade)
   tasks        Task[]
   driveFolders DriveFolder[]
@@ -93,13 +90,12 @@ model Task {
   role        String
   stage       Int
   status      TaskStatus @default(pending)
-  data        String?    // JSON object for link, notes, etc.
+  data        String?
   assignedTo  String
   projectId   String
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
-  // Relations
   project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee   User    @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
 
@@ -108,17 +104,16 @@ model Task {
 
 model DriveFolder {
   id            String @id @default(cuid())
-  folderId      String // raw, revised, final, desain, lainnya
+  folderId      String
   name          String
   description   String?
   link          String?
-  assignedRoles String? // JSON array of role names
+  assignedRoles String?
   color         String?
   bgColor       String?
   borderColor   String?
   projectId     String
 
-  // Relations
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@map("drive_folders")
@@ -133,7 +128,6 @@ model Notification {
   userId     String
   createdAt  DateTime @default(now())
 
-  // Relations
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
