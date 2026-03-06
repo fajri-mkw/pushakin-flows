@@ -84,7 +84,7 @@ export function DashboardView() {
         .map(t => ({
           userId: t.assignedTo,
           name: getUserName(t.assignedTo),
-          role: t.title,
+          role: t.role,
           status: t.status
         }))
     }
