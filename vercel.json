@@ -1,4 +1,6 @@
 {
   "framework": "nextjs",
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "buildCommand": "prisma generate && prisma db push --accept-data-loss && next build",
+  "installCommand": "npm install && prisma generate"
 }

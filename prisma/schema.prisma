@@ -1,5 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
+// Build: 2024-03-06-force-rebuild-v2
 
 generator client {
   provider = "prisma-client-js"
@@ -152,4 +153,3 @@ model Settings {
 
   @@map("settings")
 }
-// Build: Fri Mar  6 02:18:40 UTC 2026
