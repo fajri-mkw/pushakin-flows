@@ -206,9 +206,6 @@ function AppContent() {
   const handleBackFromPublic = () => { window.location.href = window.location.pathname }
   const handleAdminLogin = () => { setAdminMaintenanceAccess(true); window.location.reload() }
 
-  const handleBackFromPublic = () => window.location.href = window.location.pathname
-  const handleAdminLogin = () => { setAdminMaintenanceAccess(true); window.location.reload() }
-
   if (isPublicView) return <PublicTrackerView onBack={handleBackFromPublic} />
   if (isLoading || maintenanceData === null) return <LoadingSpinner />
 
