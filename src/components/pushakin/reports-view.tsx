@@ -16,9 +16,15 @@ import {
   Loader2,
   Users,
   ExternalLink,
-  Globe
+  Globe,
+  Calendar,
+  CalendarDays,
+  X
 } from 'lucide-react'
 import { useState, useRef } from 'react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { format, subDays, subMonths, startOfMonth, endOfMonth, startOfYear, endOfYear, isWithinInterval, parseISO, isValid } from 'date-fns'
+import { id } from 'date-fns/locale'
 import jsPDF from 'jspdf'
 import * as XLSX from 'xlsx'
 
@@ -57,20 +63,94 @@ const isPublisherRole = (role: string) => {
   return publisherRoles.some(r => role.toLowerCase().includes(r.toLowerCase()))
 }
 
+// Date range presets
+const DATE_PRESETS = [
+  { id: 'all', label: 'Semua Waktu' },
+  { id: 'today', label: 'Hari Ini' },
+  { id: 'yesterday', label: 'Kemarin' },
+  { id: '7days', label: '7 Hari Terakhir' },
+  { id: '30days', label: '30 Hari Terakhir' },
+  { id: 'thisMonth', label: 'Bulan Ini' },
+  { id: 'lastMonth', label: 'Bulan Lalu' },
+  { id: 'thisYear', label: 'Tahun Ini' },
+  { id: 'custom', label: 'Kustom' },
+] as const
+
+type DatePresetId = typeof DATE_PRESETS[number]['id']
+
 export function ReportsView() {
   const { projects, users, selectedProjectId, setSelectedProjectId } = useAppStore()
   const [selectedUserId, setSelectedUserId] = useState<string>('all')
+  const [datePreset, setDatePreset] = useState<DatePresetId>('all')
+  const [customStartDate, setCustomStartDate] = useState<string>('')
+  const [customEndDate, setCustomEndDate] = useState<string>('')
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false)
   const [isExportingExcel, setIsExportingExcel] = useState(false)
   const printRef = useRef<HTMLDivElement>(null)
 
-  // Filter completed projects based on selected user
+  // Get date range based on preset
+  const getDateRange = () => {
+    const now = new Date()
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    
+    switch (datePreset) {
+      case 'today':
+        return { start: today, end: now }
+      case 'yesterday':
+        const yesterday = subDays(today, 1)
+        return { start: yesterday, end: yesterday }
+      case '7days':
+        return { start: subDays(today, 6), end: now }
+      case '30days':
+        return { start: subDays(today, 29), end: now }
+      case 'thisMonth':
+        return { start: startOfMonth(today), end: endOfMonth(today) }
+      case 'lastMonth':
+        const lastMonth = subMonths(today, 1)
+        return { start: startOfMonth(lastMonth), end: endOfMonth(lastMonth) }
+      case 'thisYear':
+        return { start: startOfYear(today), end: endOfYear(today) }
+      case 'custom':
+        if (customStartDate && customEndDate) {
+          const start = parseISO(customStartDate)
+          const end = parseISO(customEndDate)
+          if (isValid(start) && isValid(end)) {
+            return { start, end }
+          }
+        }
+        return null
+      default:
+        return null
+    }
+  }
+
+  // Get date range label for display
+  const getDateRangeLabel = () => {
+    if (datePreset === 'all') return 'Semua Waktu'
+    const range = getDateRange()
+    if (!range) return 'Semua Waktu'
+    return `${format(range.start, 'd MMM yyyy', { locale: id })} - ${format(range.end, 'd MMM yyyy', { locale: id })}`
+  }
+
+  // Filter completed projects based on selected user and date range
   const completedProjects = projects.filter(p => p.currentStage === 5)
-  const filteredProjects = selectedUserId === 'all' 
+  
+  const filteredByUser = selectedUserId === 'all' 
     ? completedProjects 
     : completedProjects.filter(p => {
         return p.tasks.some(t => t.assignedTo === selectedUserId)
       })
+
+  const filteredProjects = (() => {
+    const dateRange = getDateRange()
+    if (!dateRange) return filteredByUser
+    
+    return filteredByUser.filter(p => {
+      const projectDate = p.createdAt ? parseISO(p.createdAt) : null
+      if (!projectDate || !isValid(projectDate)) return false
+      return isWithinInterval(projectDate, { start: dateRange.start, end: dateRange.end })
+    })
+  })()
 
   const formatDateTime = (dateString: string) => {
     if (!dateString) return '-'
@@ -196,6 +276,7 @@ export function ReportsView() {
         ['Tanggal Export', new Date().toLocaleString('id-ID')],
         ['Total Proyek', filteredProjects.length.toString()],
         selectedUserId !== 'all' ? ['Filter User', users.find(u => u.id === selectedUserId)?.name || 'Semua'] : ['Filter User', 'Semua User'],
+        datePreset !== 'all' ? ['Periode Waktu', getDateRangeLabel()] : ['Periode Waktu', 'Semua Waktu'],
         [''],
         ['DAFTAR PROYEK'],
         ['No', 'ID Proyek', 'Judul Kegiatan', 'Unit Pemohon', 'Lokasi', 'PIC', 'Waktu Selesai', 'Jumlah Tugas']
@@ -346,6 +427,11 @@ export function ReportsView() {
       if (selectedUserId !== 'all') {
         const userName = users.find(u => u.id === selectedUserId)?.name || 'Unknown'
         pdf.text(`Filter User: ${userName}`, pageWidth / 2, yPosition, { align: 'center' })
+        yPosition += 6
+      }
+      
+      if (datePreset !== 'all') {
+        pdf.text(`Periode: ${getDateRangeLabel()}`, pageWidth / 2, yPosition, { align: 'center' })
         yPosition += 6
       }
       
@@ -973,63 +1059,138 @@ export function ReportsView() {
       {/* Filter Section */}
       <Card>
         <CardContent className="p-6">
-          <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-stone-500" />
-              <span className="text-sm font-medium text-stone-700">Filter berdasarkan User:</span>
+          <div className="flex flex-col gap-4">
+            {/* Row 1: User Filter & Time Filter */}
+            <div className="flex flex-wrap items-center gap-4">
+              {/* User Filter */}
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-stone-500" />
+                <span className="text-sm font-medium text-stone-700">User:</span>
+              </div>
+              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Pilih user..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua User</SelectItem>
+                  {users.map(user => (
+                    <SelectItem key={user.id} value={user.id}>
+                      {user.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {/* Time Filter */}
+              <div className="flex items-center gap-2 ml-4">
+                <CalendarDays className="w-5 h-5 text-stone-500" />
+                <span className="text-sm font-medium text-stone-700">Waktu:</span>
+              </div>
+              <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePresetId)}>
+                <SelectTrigger className="w-44">
+                  <SelectValue placeholder="Pilih periode..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {DATE_PRESETS.map(preset => (
+                    <SelectItem key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              
+              {/* Custom Date Range */}
+              {datePreset === 'custom' && (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={customStartDate}
+                    onChange={(e) => setCustomStartDate(e.target.value)}
+                    className="px-3 py-2 text-sm border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                  <span className="text-stone-400">—</span>
+                  <input
+                    type="date"
+                    value={customEndDate}
+                    onChange={(e) => setCustomEndDate(e.target.value)}
+                    className="px-3 py-2 text-sm border border-stone-200 rounded-md focus:outline-none focus:ring-2 focus:ring-violet-500"
+                  />
+                </div>
+              )}
+              
+              {/* Clear Filters */}
+              {(selectedUserId !== 'all' || datePreset !== 'all') && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setSelectedUserId('all')
+                    setDatePreset('all')
+                    setCustomStartDate('')
+                    setCustomEndDate('')
+                  }}
+                  className="text-stone-500 hover:text-stone-700 gap-1"
+                >
+                  <X className="w-4 h-4" />
+                  <span>Reset</span>
+                </Button>
+              )}
+              
+              <div className="flex-1" />
+              
+              {/* Export Buttons */}
+              <div className="flex gap-3">
+                <Button
+                  variant="outline"
+                  onClick={handleExportAllToExcel}
+                  disabled={isExportingExcel || filteredProjects.length === 0}
+                  className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
+                >
+                  {isExportingExcel ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4" />
+                  )}
+                  <span>{isExportingExcel ? 'Mengekspor...' : 'Export Excel'}</span>
+                </Button>
+                <Button
+                  onClick={handleExportAllToPDF}
+                  disabled={isGeneratingPDF || filteredProjects.length === 0}
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-md shadow-violet-500/20"
+                >
+                  {isGeneratingPDF ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Printer className="w-4 h-4" />
+                  )}
+                  <span>{isGeneratingPDF ? 'Membuat PDF...' : 'Export PDF'}</span>
+                </Button>
+              </div>
             </div>
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Pilih user..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua User</SelectItem>
-                {users.map(user => (
-                  <SelectItem key={user.id} value={user.id}>
-                    {user.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
             
-            <div className="flex-1" />
-            
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleExportAllToExcel}
-                disabled={isExportingExcel || filteredProjects.length === 0}
-                className="gap-2 bg-green-50 text-green-700 hover:bg-green-100 border-green-200"
-              >
-                {isExportingExcel ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="w-4 h-4" />
-                )}
-                <span>{isExportingExcel ? 'Mengekspor...' : 'Export Excel'}</span>
-              </Button>
-              <Button
-                onClick={handleExportAllToPDF}
-                disabled={isGeneratingPDF || filteredProjects.length === 0}
-                className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-md shadow-violet-500/20"
-              >
-                {isGeneratingPDF ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Printer className="w-4 h-4" />
-                )}
-                <span>{isGeneratingPDF ? 'Membuat PDF...' : 'Export PDF'}</span>
-              </Button>
-            </div>
+            {/* Filter Info */}
+            {(selectedUserId !== 'all' || datePreset !== 'all') && (
+              <div className="pt-4 border-t border-stone-200">
+                <div className="flex flex-wrap gap-2 text-sm text-stone-600">
+                  <span>Menampilkan</span>
+                  <strong className="text-violet-700">{filteredProjects.length}</strong>
+                  <span>proyek</span>
+                  {selectedUserId !== 'all' && (
+                    <>
+                      <span>oleh</span>
+                      <strong className="text-stone-800">{users.find(u => u.id === selectedUserId)?.name}</strong>
+                    </>
+                  )}
+                  {datePreset !== 'all' && (
+                    <>
+                      <span>pada periode</span>
+                      <strong className="text-stone-800">{getDateRangeLabel()}</strong>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
-          
-          {selectedUserId !== 'all' && (
-            <div className="mt-4 pt-4 border-t border-stone-200">
-              <p className="text-sm text-stone-600">
-                Menampilkan <strong>{filteredProjects.length}</strong> proyek yang dikerjakan oleh <strong>{users.find(u => u.id === selectedUserId)?.name}</strong>
-              </p>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -1039,9 +1200,9 @@ export function ReportsView() {
             <FileText className="w-16 h-16 text-stone-300 mx-auto mb-4" />
             <h3 className="text-xl font-semibold text-stone-800">Tidak Ada Laporan</h3>
             <p className="text-stone-500 mt-2">
-              {selectedUserId === 'all' 
-                ? 'Laporan akan muncul otomatis ketika sebuah proyek telah menyelesaikan proses Publikasi.'
-                : 'Tidak ada proyek yang dikerjakan oleh user tersebut.'
+              {filteredProjects.length === 0 && completedProjects.length > 0 
+                ? 'Tidak ada proyek yang cocok dengan filter yang dipilih. Coba ubah filter atau reset filter.'
+                : 'Laporan akan muncul otomatis ketika sebuah proyek telah menyelesaikan proses Publikasi.'
               }
             </p>
           </CardContent>
