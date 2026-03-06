@@ -741,7 +741,7 @@ export function ProjectDetailView() {
       {/* Edit Drive Modal - Correction Tool */}
       <Dialog open={isEditDriveOpen} onOpenChange={setIsEditDriveOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
-          <DialogHeader>
+          <DialogHeader className="shrink-0">
             <DialogTitle className="flex items-center gap-2 text-amber-700">
               <AlertCircle className="w-5 h-5" />
               <span>Koreksi Akses Folder</span>
@@ -754,112 +754,120 @@ export function ProjectDetailView() {
             </DialogDescription>
           </DialogHeader>
           
-          <Tabs defaultValue={project.driveFolders[0]?.id} className="flex-1 flex flex-col min-h-0">
-            <TabsList className="w-full justify-start gap-1 bg-stone-100 p-1 h-auto flex-wrap">
-              {project.driveFolders.map((folder) => (
-                <TabsTrigger 
-                  key={folder.id} 
-                  value={folder.id}
-                  className="data-[state=active]:bg-white data-[state=active]:shadow-sm px-3 py-1.5 text-xs font-medium"
-                >
-                  {folder.name ? folder.name.split(' (')[0] : 'Folder'}
-                </TabsTrigger>
-              ))}
-            </TabsList>
+          <div className="flex-1 min-h-0 flex flex-col border rounded-xl overflow-hidden bg-stone-50/50">
+            {/* Scrollable Folder Tabs */}
+            <div className="border-b bg-white shrink-0">
+              <Tabs defaultValue={project.driveFolders[0]?.id} className="w-full">
+                <TabsList className="w-full justify-start gap-1 bg-transparent p-2 h-auto overflow-x-auto flex-nowrap">
+                  {project.driveFolders.map((folder) => (
+                    <TabsTrigger 
+                      key={folder.id} 
+                      value={folder.id}
+                      className="data-[state=active]:bg-amber-100 data-[state=active]:text-amber-700 data-[state=active]:border-amber-300 bg-white border border-stone-200 px-3 py-1.5 text-xs font-medium whitespace-nowrap shrink-0"
+                    >
+                      {folder.name ? folder.name.split(' (')[0] : 'Folder'}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              </Tabs>
+            </div>
             
-            <ScrollArea className="flex-1 mt-4 pr-4">
-              {project.driveFolders.map((folder) => (
-                <TabsContent key={folder.id} value={folder.id} className="mt-0">
-                  <div className="space-y-4 p-1">
-                    {/* Folder Info */}
-                    <div className="flex items-center gap-4 p-4 rounded-xl border border-stone-200 bg-gradient-to-r from-stone-50 to-white">
-                      <div className={cn("p-3 rounded-xl", folder.bg || 'bg-stone-100')}>
-                        <Folder className={cn("w-6 h-6", folder.color || 'text-stone-600')} />
-                      </div>
-                      <div className="flex-1">
-                        <h4 className="font-bold text-stone-800">
-                          {folder.name || 'Folder'}
-                        </h4>
-                        <p className="text-sm text-stone-500 mt-0.5">{folder.desc}</p>
-                      </div>
-                    </div>
-                    
-                    {/* Role Access */}
-                    <div className="space-y-3">
-                      <div className="flex items-center justify-between">
-                        <Label className="text-sm font-semibold text-stone-700 flex items-center gap-2">
-                          <Shield className="w-4 h-4" />
-                          <span>Akses Role</span>
-                        </Label>
-                        {(driveRoles[folder.id] || []).length === 0 && (
-                          <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
-                            ✓ Semua role dapat mengakses
-                          </span>
-                        )}
-                        {(driveRoles[folder.id] || []).length > 0 && (
-                          <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
-                            ⚠️ {(driveRoles[folder.id] || []).length} role dibatasi
-                          </span>
-                        )}
+            {/* Scrollable Content Area */}
+            <Tabs defaultValue={project.driveFolders[0]?.id} className="flex-1 min-h-0">
+              <ScrollArea className="h-[400px]">
+                {project.driveFolders.map((folder) => (
+                  <TabsContent key={folder.id} value={folder.id} className="mt-0 p-4 focus-visible:outline-none">
+                    <div className="space-y-4">
+                      {/* Folder Info */}
+                      <div className="flex items-center gap-4 p-4 rounded-xl border border-stone-200 bg-gradient-to-r from-stone-50 to-white">
+                        <div className={cn("p-3 rounded-xl", folder.bg || 'bg-stone-100')}>
+                          <Folder className={cn("w-6 h-6", folder.color || 'text-stone-600')} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className="font-bold text-stone-800 truncate">
+                            {folder.name || 'Folder'}
+                          </h4>
+                          <p className="text-sm text-stone-500 mt-0.5 truncate">{folder.desc}</p>
+                        </div>
                       </div>
                       
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                        {ROLES.filter(r => r !== 'Admin' && r !== 'Manager').map(role => {
-                          const isSelected = (driveRoles[folder.id] || []).includes(role)
-                          return (
-                            <button
-                              key={role}
-                              type="button"
-                              onClick={() => {
-                                const currentRoles = driveRoles[folder.id] || []
-                                const newRoles = isSelected
-                                  ? currentRoles.filter(r => r !== role)
-                                  : [...currentRoles, role]
-                                setDriveRoles({...driveRoles, [folder.id]: newRoles})
-                              }}
-                              className={cn(
-                                "px-3 py-2 text-xs rounded-lg border text-left transition-all truncate",
-                                isSelected
-                                  ? "bg-amber-100 border-amber-300 text-amber-700 font-medium ring-1 ring-amber-200"
-                                  : "bg-white border-stone-200 text-stone-600 hover:border-amber-200 hover:bg-amber-50/50"
-                              )}
-                            >
-                              <span className="flex items-center gap-2">
-                                {isSelected && <Lock className="w-3 h-3 flex-shrink-0" />}
-                                <span className="truncate">{role}</span>
-                              </span>
-                            </button>
-                          )
-                        })}
-                      </div>
-                      
-                      {/* Quick Actions */}
-                      <div className="flex gap-2 pt-2">
-                        <button
-                          type="button"
-                          onClick={() => setDriveRoles({...driveRoles, [folder.id]: []})}
-                          className="text-xs text-stone-500 hover:text-green-600 underline"
-                        >
-                          Buka akses semua role
-                        </button>
-                        <span className="text-stone-300">|</span>
-                        <button
-                          type="button"
-                          onClick={() => setDriveRoles({
-                            ...driveRoles, 
-                            [folder.id]: ROLES.filter(r => r !== 'Admin' && r !== 'Manager')
+                      {/* Role Access */}
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <Label className="text-sm font-semibold text-stone-700 flex items-center gap-2">
+                            <Shield className="w-4 h-4" />
+                            <span>Akses Role</span>
+                          </Label>
+                          {(driveRoles[folder.id] || []).length === 0 && (
+                            <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">
+                              ✓ Semua role dapat mengakses
+                            </span>
+                          )}
+                          {(driveRoles[folder.id] || []).length > 0 && (
+                            <span className="text-xs text-amber-600 bg-amber-50 px-2 py-1 rounded-full">
+                              ⚠️ {(driveRoles[folder.id] || []).length} role dibatasi
+                            </span>
+                          )}
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-2">
+                          {ROLES.filter(r => r !== 'Admin' && r !== 'Manager').map(role => {
+                            const isSelected = (driveRoles[folder.id] || []).includes(role)
+                            return (
+                              <button
+                                key={role}
+                                type="button"
+                                onClick={() => {
+                                  const currentRoles = driveRoles[folder.id] || []
+                                  const newRoles = isSelected
+                                    ? currentRoles.filter(r => r !== role)
+                                    : [...currentRoles, role]
+                                  setDriveRoles({...driveRoles, [folder.id]: newRoles})
+                                }}
+                                className={cn(
+                                  "px-3 py-2.5 text-xs rounded-lg border text-left transition-all truncate",
+                                  isSelected
+                                    ? "bg-amber-100 border-amber-300 text-amber-700 font-medium ring-1 ring-amber-200"
+                                    : "bg-white border-stone-200 text-stone-600 hover:border-amber-200 hover:bg-amber-50/50"
+                                )}
+                              >
+                                <span className="flex items-center gap-2">
+                                  {isSelected && <Lock className="w-3 h-3 flex-shrink-0" />}
+                                  <span className="truncate">{role}</span>
+                                </span>
+                              </button>
+                            )
                           })}
-                          className="text-xs text-stone-500 hover:text-amber-600 underline"
-                        >
-                          Batasi akses semua role
-                        </button>
+                        </div>
+                        
+                        {/* Quick Actions */}
+                        <div className="flex gap-2 pt-2 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => setDriveRoles({...driveRoles, [folder.id]: []})}
+                            className="text-xs text-stone-500 hover:text-green-600 underline"
+                          >
+                            Buka akses semua role
+                          </button>
+                          <span className="text-stone-300">|</span>
+                          <button
+                            type="button"
+                            onClick={() => setDriveRoles({
+                              ...driveRoles, 
+                              [folder.id]: ROLES.filter(r => r !== 'Admin' && r !== 'Manager')
+                            })}
+                            className="text-xs text-stone-500 hover:text-amber-600 underline"
+                          >
+                            Batasi akses semua role
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </TabsContent>
-              ))}
-            </ScrollArea>
-          </Tabs>
+                  </TabsContent>
+                ))}
+              </ScrollArea>
+            </Tabs>
+          </div>
           
           <DialogFooter className="mt-4 pt-4 border-t">
             <Button type="button" variant="ghost" onClick={() => setIsEditDriveOpen(false)}>

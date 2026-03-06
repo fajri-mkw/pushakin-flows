@@ -1,12 +1,13 @@
-# This is your Prisma schema file for PRODUCTION (PostgreSQL)
+// This is your Prisma schema file for PostgreSQL (Production/Vercel)
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
 }
 
 enum Role {
@@ -43,7 +44,7 @@ model User {
   id        String   @id @default(cuid())
   name      String
   email     String   @unique
-  password  String   @default("$2a$10$placeholder")
+  password  String   @default("$2a$10$placeholder") // Hashed password, will be set on creation
   whatsapp  String?
   avatar    String?
   role      Role     @default(Reporter)
@@ -73,7 +74,7 @@ model Project {
   customOutput    String?
   currentStage    Int      @default(1)
   managerId       String
-  publicToken     String?  @unique
+  publicToken     String?  @unique // Token for public sharing
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -91,7 +92,7 @@ model Task {
   role        String
   stage       Int
   status      TaskStatus @default(pending)
-  data        String?
+  data        String?    // JSON object for link, notes, etc.
   assignedTo  String
   projectId   String
   createdAt   DateTime   @default(now())
@@ -106,11 +107,11 @@ model Task {
 
 model DriveFolder {
   id            String @id @default(cuid())
-  folderId      String
+  folderId      String // raw, revised, final, desain, lainnya
   name          String
   description   String?
   link          String?
-  assignedRoles String?
+  assignedRoles String? // JSON array of role names
   color         String?
   bgColor       String?
   borderColor   String?
@@ -145,6 +146,8 @@ model Settings {
   driveSharedDriveId    String?
   driveServiceAccountKey String?
   driveApiKey           String?
+  maintenanceMode       Boolean  @default(false)
+  maintenanceMessage    String?
   updatedAt             DateTime @updatedAt
 
   @@map("settings")
