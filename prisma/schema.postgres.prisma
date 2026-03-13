@@ -1,0 +1,151 @@
+# This is your Prisma schema file for PRODUCTION (PostgreSQL)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Admin
+  Manager
+  Reporter
+  PhotographerAudio
+  VideographerAudio
+  EditorMedia
+  EditorWebSocialMedia
+  GraphicDesigner
+  StreamingOperator
+  PodcastOperator
+  Reviewer
+  PublisherWeb
+  PublisherSocialMedia
+}
+
+enum TaskStatus {
+  pending
+  completed
+}
+
+enum Stage {
+  Perencanaan
+  Produksi
+  PascaProduksi
+  Review
+  Publikasi
+  Selesai
+}
+
+model User {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String   @default("$2a$10$placeholder")
+  whatsapp  String?
+  avatar    String?
+  role      Role     @default(Reporter)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  tasksAsAssignee  Task[]
+  notifications    Notification[]
+  projectsAsManager Project[]
+
+  @@map("users")
+}
+
+model Project {
+  id              String   @id @default(cuid())
+  title           String
+  description     String
+  requesterUnit   String
+  location        String?
+  executionTime   String?
+  picName         String?
+  picWhatsApp     String?
+  activityTypes   String   // JSON array
+  customActivity  String?
+  outputNeeds     String   // JSON array
+  customOutput    String?
+  currentStage    Int      @default(1)
+  managerId       String
+  publicToken     String?  @unique
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  manager      User           @relation(fields: [managerId], references: [id], onDelete: Cascade)
+  tasks        Task[]
+  driveFolders DriveFolder[]
+  notifications Notification[]
+
+  @@map("projects")
+}
+
+model Task {
+  id          String     @id @default(cuid())
+  role        String
+  stage       Int
+  status      TaskStatus @default(pending)
+  data        String?
+  assignedTo  String
+  projectId   String
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  // Relations
+  project    Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee   User    @relation(fields: [assignedTo], references: [id], onDelete: Cascade)
+
+  @@map("tasks")
+}
+
+model DriveFolder {
+  id            String @id @default(cuid())
+  folderId      String
+  name          String
+  description   String?
+  link          String?
+  assignedRoles String?
+  color         String?
+  bgColor       String?
+  borderColor   String?
+  projectId     String
+
+  // Relations
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@map("drive_folders")
+}
+
+model Notification {
+  id         String   @id @default(cuid())
+  message    String
+  projectId  String?
+  targetView String   @default("project_detail")
+  read       Boolean  @default(false)
+  userId     String
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+model Settings {
+  id                    String   @id @default("main")
+  driveAutoCreate       Boolean  @default(false)
+  driveParentFolderId   String?
+  driveSharedDriveId    String?
+  driveServiceAccountKey String?
+  driveApiKey           String?
+  updatedAt             DateTime @updatedAt
+
+  @@map("settings")
+}
