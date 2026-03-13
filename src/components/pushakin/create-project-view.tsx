@@ -204,6 +204,10 @@ export function CreateProjectView() {
         }
       })
 
+      // Stage 1 roles that upload to RAW folder
+      const stage1Roles = ['Reporter', 'Photographer & Audio', 'Videographer & Audio', 'Graphic Designer']
+      const stage1Tasks = tasks.filter(t => stage1Roles.includes(t.role))
+
       // Generate folder data - either real or mock
       let generatedFolders: Array<{
         folderId: string
@@ -214,18 +218,30 @@ export function CreateProjectView() {
         border: string
         link: string
         assignedRoles: string[]
+        parentFolderId?: string
       }> = []
 
       if (driveAutoCreate) {
         // Try to create real Google Drive folders
         setDriveCreatingStatus('Membuat folder di Google Drive...')
         try {
+          // Prepare stage1Users for subfolder creation
+          const stage1UsersData = stage1Tasks.map(t => {
+            const user = users.find(u => u.id === t.assignedTo)
+            return {
+              role: t.role,
+              userName: user?.name || 'Unknown',
+              userId: t.assignedTo
+            }
+          }).filter(u => u.userId) // Only include if user is assigned
+
           const driveResponse = await fetch('/api/drive', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               projectTitle: title,
-              folderTypes: selectedFolders
+              folderTypes: selectedFolders,
+              stage1Users: stage1UsersData
             })
           })
           
@@ -251,20 +267,20 @@ export function CreateProjectView() {
             } else {
               // Fallback to mock
               console.log('[DRIVE] Auto-create failed, using mock folders')
-              generatedFolders = createMockFolders(selectedFolders, rolesToAssign)
+              generatedFolders = createMockFolders(selectedFolders, rolesToAssign, tasks)
             }
           } else {
             // Fallback to mock
             console.log('[DRIVE] API error, using mock folders')
-            generatedFolders = createMockFolders(selectedFolders, rolesToAssign)
+            generatedFolders = createMockFolders(selectedFolders, rolesToAssign, tasks)
           }
         } catch (driveError) {
           console.error('[DRIVE] Error:', driveError)
-          generatedFolders = createMockFolders(selectedFolders, rolesToAssign)
+          generatedFolders = createMockFolders(selectedFolders, rolesToAssign, tasks)
         }
       } else {
         // Use mock folders
-        generatedFolders = createMockFolders(selectedFolders, rolesToAssign)
+        generatedFolders = createMockFolders(selectedFolders, rolesToAssign, tasks)
       }
 
       setDriveCreatingStatus(null)
@@ -366,22 +382,83 @@ export function CreateProjectView() {
     }
   }
 
-  // Helper function to create mock folders
-  const createMockFolders = (folderIds: string[], rolesToAssign: string[]) => {
-    return folderIds.map(folderId => {
+  // Helper function to create mock folders with user-specific subfolders for RAW
+  const createMockFolders = (folderIds: string[], rolesToAssign: string[], tasksData: Array<{ role: string; assignedTo: string }>) => {
+    const folders: Array<{
+      folderId: string
+      name: string
+      desc: string
+      color: string
+      bg: string
+      border: string
+      link: string
+      assignedRoles: string[]
+      parentFolderId?: string
+    }> = []
+    
+    // Stage 1 roles that upload to RAW
+    const stage1Roles = ['Reporter', 'Photographer & Audio', 'Videographer & Audio', 'Graphic Designer']
+    const stage1Tasks = tasksData.filter(t => stage1Roles.includes(t.role))
+    
+    folderIds.forEach(folderId => {
       const optionInfo = FOLDER_OPTIONS.find(opt => opt.id === folderId)
       const assignedToFolder = (folderRoles[folderId] || []).filter(r => rolesToAssign.includes(r))
-      return {
-        folderId,
-        name: optionInfo?.name || `Folder ${folderId}`,
-        desc: optionInfo?.desc || '',
-        color: optionInfo?.color || 'text-stone-600',
-        bg: optionInfo?.bg || 'bg-stone-100',
-        border: optionInfo?.border || 'border-stone-200',
-        link: `https://drive.google.com/drive/folders/mock-${folderId}-${Date.now()}`,
-        assignedRoles: assignedToFolder
+      
+      if (folderId === 'raw' && stage1Tasks.length > 0) {
+        // Create main RAW folder
+        const mainRawFolderId = `raw-main-${Date.now()}`
+        folders.push({
+          folderId: 'raw',
+          name: optionInfo?.name || 'RAW FOLDER',
+          desc: optionInfo?.desc || '',
+          color: optionInfo?.color || 'text-stone-600',
+          bg: optionInfo?.bg || 'bg-stone-100',
+          border: optionInfo?.border || 'border-stone-200',
+          link: `https://drive.google.com/drive/folders/mock-raw-main-${Date.now()}`,
+          assignedRoles: []
+        })
+        
+        // Create user-specific subfolders inside RAW
+        stage1Tasks.forEach((task, idx) => {
+          const assignedUser = users.find(u => u.id === task.assignedTo)
+          if (assignedUser) {
+            // Generate unique code from user name (e.g., "Ahmad Fauzi" -> "AF")
+            const nameParts = assignedUser.name.split(' ')
+            const userCode = nameParts.length >= 2 
+              ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+              : assignedUser.name.substring(0, 2).toUpperCase()
+            
+            const subfolderName = `${userCode}_${assignedUser.name.replace(/\s+/g, '_')}_${task.role.replace(/\s*&\s*/g, '_')}`
+            
+            folders.push({
+              folderId: `raw-${task.role.toLowerCase().replace(/\s*&\s*/g, '-')}-${idx}`,
+              name: subfolderName,
+              desc: `Subfolder untuk ${assignedUser.name} (${task.role})`,
+              color: 'text-stone-500',
+              bg: 'bg-stone-50',
+              border: 'border-stone-200',
+              link: `https://drive.google.com/drive/folders/mock-raw-${task.role.toLowerCase()}-${idx}-${Date.now()}`,
+              assignedRoles: [task.role],
+              parentFolderId: 'raw'
+            })
+          }
+        })
+      } else {
+        // Non-RAW folders stay as-is
+        folders.push({
+          folderId,
+          name: optionInfo?.name || `Folder ${folderId}`,
+          desc: optionInfo?.desc || '',
+          color: optionInfo?.color || 'text-stone-600',
+          bg: optionInfo?.bg || 'bg-stone-100',
+          border: optionInfo?.border || 'border-stone-200',
+          link: `https://drive.google.com/drive/folders/mock-${folderId}-${Date.now()}`,
+          assignedRoles: assignedToFolder
+        })
       }
     })
+    
+    return folders
   }
 
   const activeRolesForAssignment = Object.keys(selectedRoles).filter(k => selectedRoles[k])

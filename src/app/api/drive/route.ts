@@ -98,6 +98,7 @@ export async function POST(request: NextRequest) {
     const { projectTitle, folderTypes } = body as {
       projectTitle: string
       folderTypes: string[]
+      stage1Users?: Array<{ role: string; userName: string; userId: string }> // Users assigned to Stage 1
     }
     
     // Get settings
@@ -154,6 +155,7 @@ export async function POST(request: NextRequest) {
     }
     
     const createdFolders: CreatedFolder[] = []
+    let rawFolderId: string | null = null
     
     for (const folderType of folderTypes) {
       if (folderNames[folderType]) {
@@ -167,7 +169,41 @@ export async function POST(request: NextRequest) {
           ...subFolder,
           folderId: folderType
         })
+        
+        // Store RAW folder ID for creating user subfolders
+        if (folderType === 'raw') {
+          rawFolderId = subFolder.id
+        }
         // Subfolders inherit permissions from parent, no need to share individually
+      }
+    }
+    
+    // Create user-specific subfolders inside RAW folder
+    if (rawFolderId && body.stage1Users && body.stage1Users.length > 0) {
+      console.log('[DRIVE] Creating user subfolders in RAW for:', body.stage1Users.map(u => u.userName).join(', '))
+      
+      for (const user of body.stage1Users) {
+        // Generate unique code from user name (e.g., "Ahmad Fauzi" -> "AF")
+        const nameParts = user.userName.split(' ')
+        const userCode = nameParts.length >= 2 
+          ? (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+          : user.userName.substring(0, 2).toUpperCase()
+        
+        const subfolderName = `${userCode}_${user.userName.replace(/\s+/g, '_')}_${user.role.replace(/\s*&\s*/g, '_')}`
+        
+        const userSubfolder = await createFolder(
+          drive,
+          subfolderName,
+          rawFolderId,
+          settings.driveSharedDriveId
+        )
+        
+        createdFolders.push({
+          ...userSubfolder,
+          folderId: `raw-${user.role.toLowerCase().replace(/\s*&\s*/g, '-')}-${user.userId}`
+        })
+        
+        console.log('[DRIVE] Created user subfolder:', subfolderName)
       }
     }
     

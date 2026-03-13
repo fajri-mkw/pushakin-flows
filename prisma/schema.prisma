@@ -116,6 +116,7 @@ model DriveFolder {
   bgColor       String?
   borderColor   String?
   projectId     String
+  parentFolderId String? // For subfolders, reference to parent folder (cuid)
 
   // Relations
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)

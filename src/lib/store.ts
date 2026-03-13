@@ -56,6 +56,7 @@ export interface DriveFolder {
   border: string
   link: string
   assignedRoles: string[]
+  parentFolderId?: string | null
 }
 
 export interface Project {

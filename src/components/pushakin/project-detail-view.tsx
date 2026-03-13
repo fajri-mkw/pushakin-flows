@@ -48,7 +48,8 @@ import {
   Save,
   Plus,
   X,
-  Globe
+  Globe,
+  ExternalLink
 } from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { cn } from '@/lib/utils'
@@ -259,10 +260,25 @@ export function ProjectDetailView() {
   }
 
   const visibleFolders = project.driveFolders.filter(folder => {
+    // For managers/admins, show all folders
     if (canManageProject) return true
+    // For subfolders, check if parent is visible AND user has access to subfolder
+    if (folder.parentFolderId) {
+      // Check if user's role is assigned to this subfolder
+      if (!folder.assignedRoles || folder.assignedRoles.length === 0) return true
+      return folder.assignedRoles.includes(currentUser?.role || '')
+    }
+    // For parent folders without role restriction
     if (!folder.assignedRoles || folder.assignedRoles.length === 0) return true
     return folder.assignedRoles.includes(currentUser?.role || '')
   })
+
+  // Separate parent folders and subfolders
+  const parentFolders = visibleFolders.filter(f => !f.parentFolderId)
+  const subfolders = visibleFolders.filter(f => f.parentFolderId)
+  
+  // Get subfolders for a parent folder
+  const getSubfolders = (parentId: string) => subfolders.filter(s => s.parentFolderId === parentId)
 
   const visibleTasks = project.tasks.filter(t => 
     isManagerOrAdmin ? true : t.assignedTo === currentUser?.id
@@ -464,45 +480,91 @@ export function ProjectDetailView() {
                     variant="outline"
                     size="sm"
                     onClick={handleOpenEditDrive}
-                    className="gap-2 text-indigo-600 border-indigo-200 hover:bg-indigo-50"
+                    className="gap-2 text-amber-600 border-amber-200 hover:bg-amber-50"
                   >
                     <Edit className="w-3 h-3" />
-                    <span>Atur Folder</span>
+                    <span>Koreksi Folder</span>
                   </Button>
                 )}
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {visibleFolders.map((folder) => (
-                  <div
-                    key={folder.id}
-                    className="flex flex-col bg-white p-3.5 rounded-2xl border border-stone-100"
-                  >
-                    <div className="flex items-center gap-3 mb-2">
-                      <div className={cn("p-2.5 rounded-xl", folder.bg || 'bg-stone-100', folder.color || 'text-stone-600')}>
-                        <Folder className="w-5 h-5" />
-                      </div>
-                      <div className="flex-1 overflow-hidden">
-                        <div className="font-bold text-stone-800 text-xs truncate">
-                          {folder.name ? folder.name.split(' (')[0] : 'Folder'}
+                {parentFolders.map((folder) => {
+                  const folderSubfolders = getSubfolders(folder.id)
+                  return (
+                    <div
+                      key={folder.id}
+                      className="flex flex-col bg-white p-3.5 rounded-2xl border border-stone-100"
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div className={cn("p-2.5 rounded-xl", folder.bg || 'bg-stone-100', folder.color || 'text-stone-600')}>
+                          <Folder className="w-5 h-5" />
                         </div>
-                        <p className="text-[9px] text-stone-400 mt-0.5 truncate">{folder.desc}</p>
-                      </div>
-                    </div>
-                    <div className="mt-auto pt-2 border-t border-stone-50">
-                      {folder.assignedRoles && folder.assignedRoles.length > 0 ? (
-                        <div className="flex flex-wrap gap-1">
-                          {folder.assignedRoles.map(r => (
-                            <span key={r} className="text-[8px] bg-stone-50 text-stone-600 px-1.5 py-0.5 rounded border border-stone-100 font-medium">
-                              {r}
-                            </span>
-                          ))}
+                        <div className="flex-1 overflow-hidden">
+                          <div className="font-bold text-stone-800 text-xs truncate">
+                            {folder.name ? folder.name.split(' (')[0] : 'Folder'}
+                          </div>
+                          <p className="text-[9px] text-stone-400 mt-0.5 truncate">{folder.desc}</p>
                         </div>
-                      ) : (
-                        <span className="text-[9px] text-stone-400 italic">Akses Global (Semua Tim)</span>
+                      </div>
+                      
+                      {/* Show subfolders if any */}
+                      {folderSubfolders.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-stone-50">
+                          <div className="text-[9px] font-bold text-stone-500 uppercase tracking-wider mb-2">
+                            Subfolder ({folderSubfolders.length})
+                          </div>
+                          <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                            {folderSubfolders.map(sub => (
+                              <div key={sub.id} className="flex items-center gap-2 p-2 bg-stone-50 rounded-lg border border-stone-100">
+                                <div className="p-1.5 rounded-md bg-white border border-stone-200">
+                                  <Folder className="w-3 h-3 text-stone-500" />
+                                </div>
+                                <div className="flex-1 overflow-hidden">
+                                  <div className="text-[10px] font-medium text-stone-700 truncate" title={sub.name}>
+                                    {sub.name}
+                                  </div>
+                                  {sub.assignedRoles && sub.assignedRoles.length > 0 && (
+                                    <div className="text-[8px] text-stone-400 truncate">
+                                      {sub.assignedRoles.join(', ')}
+                                    </div>
+                                  )}
+                                </div>
+                                {sub.link && (
+                                  <a 
+                                    href={sub.link} 
+                                    target="_blank" 
+                                    rel="noreferrer"
+                                    className="p-1 text-indigo-500 hover:text-indigo-700"
+                                    title="Buka folder"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Show assigned roles if no subfolders */}
+                      {folderSubfolders.length === 0 && (
+                        <div className="mt-auto pt-2 border-t border-stone-50">
+                          {folder.assignedRoles && folder.assignedRoles.length > 0 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {folder.assignedRoles.map(r => (
+                                <span key={r} className="text-[8px] bg-stone-50 text-stone-600 px-1.5 py-0.5 rounded border border-stone-100 font-medium">
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-[9px] text-stone-400 italic">Akses Global (Semua Tim)</span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

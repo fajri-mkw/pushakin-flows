@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
           }))
         },
         driveFolders: {
-          create: driveFolders.map((f: { folderId: string; name: string; desc: string; color: string; bg: string; border: string; link: string; assignedRoles: string[] }) => ({
+          create: driveFolders.map((f: { folderId: string; name: string; desc: string; color: string; bg: string; border: string; link: string; assignedRoles: string[]; parentFolderId?: string }) => ({
             folderId: f.folderId,
             name: f.name,
             description: f.desc,
@@ -121,7 +121,8 @@ export async function POST(request: NextRequest) {
             bgColor: f.bg,
             borderColor: f.border,
             link: f.link,
-            assignedRoles: JSON.stringify(f.assignedRoles)
+            assignedRoles: JSON.stringify(f.assignedRoles),
+            parentFolderId: f.parentFolderId || null
           }))
         }
       },
